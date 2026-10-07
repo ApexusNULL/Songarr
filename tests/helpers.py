@@ -22,6 +22,8 @@ from songarr import dependencies, discover, lyrics, podcasts  # noqa: E402
 _NOWHERE = "http://127.0.0.1:9"
 discover.API = artist_info.WIKI = artist_info.WIKIDATA = artist_info.LASTFM = podcasts.ITUNES = lyrics.API = _NOWHERE
 dependencies.PYPI = _NOWHERE  # and never PyPI
+from songarr import selfupdate  # noqa: E402
+selfupdate.ROOT = Path(tempfile.gettempdir()) / "songarr-tests-not-a-clone"  # and never this repository's origin
 _CACHE = Path(tempfile.gettempdir()) / "songarr-test-audio"
 
 

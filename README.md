@@ -107,7 +107,7 @@ macOS too, but this guide uses Windows; Ubuntu and Debian have an install script
 
 ## Step 1: Install the server
 
-> **Easiest: the installer.** Run `Songarr-Setup-<version>.exe` (from this project's Releases page, or [build it](#building-the-installer)). It brings its own Python, asks for a name and logo, your music folder and the ports, makes the shortcuts, and can install FFmpeg and Deno; then carry on with [Step 2](#step-2-bring-your-music-over). The steps below install from source instead (needed to build the phone app in Step 4 anyway).
+> **Easiest: the installer.** Run `Songarr-Setup-<version>.exe` (from the [Releases page](https://github.com/ApexusNULL/Songarr/releases) when there is one, or [build it](#building-the-installer)). It brings its own Python, asks for a name and logo, your music folder and the ports, makes the shortcuts, and can install FFmpeg and Deno; then carry on with [Step 2](#step-2-bring-your-music-over). The steps below install from source instead (needed to build the phone app in Step 4 anyway).
 >
 > <p align="center"><img src="docs/images/installer.png" alt="The installer" width="820"></p>
 
@@ -134,7 +134,7 @@ winget install OpenJS.NodeJS.LTS
 **2. Download Songarr and install its Python packages:**
 
 ```powershell
-git clone https://github.com/<you>/songarr.git
+git clone https://github.com/ApexusNULL/Songarr.git songarr
 cd songarr
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -590,6 +590,14 @@ From the command line (the Windows installer uses this):
 
 ## Keeping it working
 
+**Songarr updates itself.** When it runs from a git clone (as in [Step 1](#step-1-install-the-server), or
+on Ubuntu), every update check also looks for new commits on GitHub. It moves to them, installs the
+packages again if `requirements.txt` changed, checks the new code starts, and restarts once nobody's
+listening. A folder with changes of its own is never overwritten (Songarr only says an update is
+waiting), and a version that doesn't start is put back. **Settings → System** shows the commit it's on,
+and **Settings → Servers** the commit each server runs. The Windows installer's copy isn't a git clone:
+it's updated by installing a newer installer over it.
+
 YouTube changes often, and yt-dlp keeps up with frequent releases. Songarr keeps [yt-dlp](https://github.com/yt-dlp/yt-dlp) and its other Python packages up to
 date by itself (**Settings → System → Automatic updates**, on by default). Every few hours it looks for
 new stable releases on PyPI:
@@ -613,8 +621,9 @@ To update by hand (for example with automatic updates switched off), run this an
 .venv\Scripts\python.exe -m pip install -U "yt-dlp[default]"
 ```
 
-To update Songarr itself: `git pull`, then `.venv\Scripts\python.exe -m pip install -r requirements.txt`,
-restart it, and rebuild and publish the app if it changed.
+To update Songarr itself by hand (with automatic updates switched off): `git pull`, then
+`.venv\Scripts\python.exe -m pip install -r requirements.txt`, and restart it. When the app changed,
+rebuild and publish it too ([Step 4](#step-4-build-and-install-the-android-app)).
 
 ## Backup servers
 
@@ -673,9 +682,11 @@ How it works:
 
    (Fill in the NAS's user and password with an editor rather than in the command, so they don't
    stay in your shell history.)
-4. **Install the backup** on the Ubuntu box, from a copy of Songarr (`git clone` this repository):
+4. **Install the backup** on the Ubuntu box: clone this repository (so it updates itself from GitHub,
+   like the main server) and run the install script:
 
    ```bash
+   sudo apt install -y git && git clone https://github.com/ApexusNULL/Songarr.git ~/songarr && cd ~/songarr
    installer/install-linux.sh --music-folder /mnt/nas/Music --cluster-folder "/mnt/nas/Songarr servers" --name "Ubuntu box" --role backup --app-address https://music2.yourdomain.com
    ```
 
@@ -703,7 +714,7 @@ music, and neither server can help with that.
 | Playlist files | On | Write everyone's Liked Songs and playlists as `.m3u8` files to `<library>\Playlists`. |
 | App address | (none) | Your HTTPS address from Step 3, put into pairing QR codes. |
 | Wikipedia contact / Last.fm API key | (none) | Optional, see [Optional extras](#optional-extras). |
-| Automatic updates | On | Keeps yt-dlp and the other packages current; see [Keeping it working](#keeping-it-working). |
+| Automatic updates | On | Keeps Songarr itself (from GitHub, in a git clone), yt-dlp and the other packages current; see [Keeping it working](#keeping-it-working). |
 | Name and icon | Songarr | What the website, apps, tray icon and shortcuts are called and look like; see [Name and icon](#name-and-icon). |
 
 ## Where things live
@@ -768,7 +779,8 @@ The wizard asks for:
 - **FFmpeg and Deno**, if they're missing: installed with winget.
 
 It carries its own Python with every package Songarr needs, so nothing else has to be installed
-first; Songarr keeps yt-dlp inside it up to date by itself. Installing again over an existing
+first; Songarr keeps yt-dlp inside it up to date by itself. A newer Songarr comes with a newer
+installer (it isn't a git clone, so it doesn't update itself from GitHub). Installing again over an existing
 install stops Songarr, keeps all its settings, and only changes what you change in the wizard.
 Uninstalling (Windows Settings → Apps) stops Songarr, removes its shortcuts, and asks whether to
 delete the data folder too; the music folder is always kept.
@@ -833,6 +845,7 @@ songarr/                  the server
   lyrics.py               synced lyrics (LRCLIB)
   app_updates.py          publishes Android builds for phones to install
   dependencies.py         keeps yt-dlp and the other packages up to date, restarts when idle
+  selfupdate.py           Songarr updates itself from its git repository (GitHub)
   verify.py               YouTube sign-in window and cookie handover (Chrome DevTools)
   tray.py                 the icon by the clock and its menu (ctypes, Windows only)
   scan.py                 finds music already in the music folder so it isn't downloaded again

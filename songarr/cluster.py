@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import __version__
+from .selfupdate import RUNNING
 
 if TYPE_CHECKING:
     from .service import Service
@@ -344,7 +345,7 @@ class Cluster:
         self.nodes_dir.mkdir(parents=True, exist_ok=True)
         _write_json(self.nodes_dir / f"{self.name}.json", {
             "name": self.name, "role": self.config.role, "state": self.state, "app_url": self.app_url(),
-            "version": __version__, "os": platform.system(), "beat": self._beat,
+            "version": __version__ + (f"+{RUNNING[:7]}" if RUNNING else ""), "os": platform.system(), "beat": self._beat,
             "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             # what any server's admin page shows and can change for this one
             "local": {k: self.config.local.get(k) or "" for k in ("library_root", "podcast_root", "public_url", "ffmpeg_path")}})

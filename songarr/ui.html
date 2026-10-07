@@ -567,6 +567,16 @@ async function renderWanted(v, soft) {
   wireActions(v);
 }
 
+function ownUpdates(o) {  // Songarr itself, from its git repository (selfupdate.py)
+  if (!o.git) return `${NAME} itself: ${o.running ? `commit ${h(o.running)}; ` : ""}this copy isn't a git clone, so a newer ${NAME} comes with a newer installer.`;
+  const from = o.remote ? ` from <b>${h(o.remote.replace(/^https?:\/\//, "").replace(/\.git$/, ""))}</b>` : "";
+  const running = o.running && o.commit && o.running !== o.commit ? ` (running ${h(o.running)} until it restarts)` : "";
+  const state = o.error ? `<span class="err-text">${h(o.error)}</span>`
+    : o.behind ? (o.blocked ? `${o.behind} update${o.behind === 1 ? "" : "s"} waiting: ${h(o.blocked)}` : `${o.behind} update${o.behind === 1 ? "" : "s"} waiting`)
+    : o.checked ? "up to date" : "not checked yet";
+  return `${NAME} itself: commit <b>${h(o.commit || "?")}</b>${o.date ? ` (${new Date(o.date).toLocaleDateString()})` : ""}${running}${from} · ${state}${o.checked ? ` · checked ${ago(o.checked)}` : ""}.`;
+}
+
 async function renderSettings(v) {
   const s = await api("/api/settings");
   const st = state.status || await api("/api/status");
@@ -663,7 +673,8 @@ async function renderSettings(v) {
       </div>
       <div class="form" style="margin-top:14px">
         <label for="auto_update">Automatic updates</label>
-        <div><label style="color:var(--text)"><input type="checkbox" id="auto_update" ${s.auto_update ? "checked" : ""}> Keep yt-dlp and ${NAME}'s other packages up to date</label>
+        <div><label style="color:var(--text)"><input type="checkbox" id="auto_update" ${s.auto_update ? "checked" : ""}> Keep ${NAME} itself, yt-dlp and its other packages up to date</label>
+          <div class="hint">${ownUpdates(deps.songarr || {})}</div>
           <div class="hint">New stable releases are installed every few hours (yt-dlp and ytmusicapi always; the others only within the same major version), checked, and ${NAME} restarts when nobody's listening. If an update doesn't work, the previous version is kept.
             <br>${Object.entries(deps.installed || {}).map(([k, v]) => `${h(k)} ${h(v)}`).join(" · ")}
             ${deps.checked ? ` · checked ${ago(deps.checked)}` : ""}${deps.error ? `<br><span class="err-text">${h(deps.error)}</span>` : ""}</div>

@@ -1,4 +1,5 @@
-"""Keeps Songarr's Python packages up to date, yt-dlp above all.
+"""Keeps Songarr up to date: itself (from its git repository, see selfupdate.py) and its Python
+packages, yt-dlp above all.
 
 YouTube changes often and yt-dlp keeps up with frequent releases, so an old yt-dlp is the usual
 reason downloads suddenly fail. Every few hours Songarr asks PyPI for new stable releases of the
@@ -28,6 +29,8 @@ from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
+
+from .selfupdate import SelfUpdate
 
 if TYPE_CHECKING:
     from .service import Service
@@ -130,9 +133,11 @@ class Dependencies:
         self.pip_install: Callable[[list[str]], tuple[bool, str]] = pip_install
         self.imports_ok: Callable[[list[str]], tuple[bool, str]] = imports_ok
         self.installed_versions: Callable[[], dict[str, str]] = installed_versions
+        self.selfupdate = SelfUpdate()
 
     def info(self) -> dict:
-        return {"enabled": bool(self.db.setting("auto_update")), "installed": self.installed_versions()} | self.state
+        return ({"enabled": bool(self.db.setting("auto_update")), "installed": self.installed_versions()} | self.state
+                | {"songarr": self.selfupdate.info()})
 
     def check(self, install: bool = True) -> dict:
         """Look for new releases and (if [install]) install them. Returns what was found and done."""
@@ -154,7 +159,31 @@ class Dependencies:
                           error="; ".join(errors)[:300] or None)
         if found and install:
             self._install(found)
-        return {"found": {k: {"from": a, "to": b} for k, (a, b) in found.items()}, "error": self.state["error"]}
+        result = {"found": {k: {"from": a, "to": b} for k, (a, b) in found.items()}, "error": self.state["error"]}
+        own = self.selfupdate.check(failed=self.db.setting("selfupdate_failed"))
+        if own["behind"] and not own["blocked"] and install:
+            done = self._update_self()
+            if done.get("updated"):
+                result["found"]["Songarr"] = {"from": done["from"], "to": done["to"]}
+            elif done.get("error"):
+                result["error"] = "; ".join(e for e in (result["error"], done["error"]) if e)[:300]
+        return result
+
+    def _update_self(self) -> dict:
+        """Songarr's repository has new commits: move to them (selfupdate.py) and restart when quiet."""
+        self.state["updating"] = True
+        try:
+            done = self.selfupdate.update(self.pip_install)
+        finally:
+            self.state["updating"] = False
+        if done.get("updated"):
+            what = f"{done['count']} change{'' if done['count'] == 1 else 's'}" + (f", the latest: {done['subject']}" if done.get("subject") else "")
+            self.db.log("updated", f"Updated Songarr {done['from']} → {done['to']} ({what}). It restarts to use it when nobody's listening.")
+            self.state["restart_pending"] = True
+        elif done.get("failed"):
+            self.db.set_setting("selfupdate_failed", done["failed"])
+            self.db.log("update-failed", f"Couldn't update Songarr to {done['failed']}: {done['error']}")
+        return done
 
     def _install(self, found: dict[str, tuple[str, str]]) -> None:
         self.state["updating"] = True

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Songarr on Ubuntu or Debian: a backup server (or a main one) that runs by itself.
 #
-# Mount the NAS first (the setup guide shows how), then run this from the Songarr folder as your
-# own user (it asks for sudo when it needs it):
+# Mount the NAS first (the setup guide shows how), clone Songarr (so it updates itself from GitHub),
+# and run this from its folder as your own user (it asks for sudo when it needs it):
 #
+#   git clone https://github.com/ApexusNULL/Songarr.git ~/songarr && cd ~/songarr
 #   installer/install-linux.sh --music-folder /mnt/nas/Music \
 #       --cluster-folder "/mnt/nas/Songarr servers" --name "Ubuntu box" --role backup \
 #       --app-address https://songarr-backup.example.com
@@ -14,7 +15,7 @@
 set -euo pipefail
 
 MUSIC="" CLUSTER="" NAME="$(hostname)" ROLE="backup" ADDRESS="" DATA="/var/lib/songarr" PORT=8484 APP_PORT=8486
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --music-folder) MUSIC="$2"; shift 2 ;;
@@ -37,7 +38,7 @@ HERE="$(pwd)"
 
 echo "== Installing Python, FFmpeg and tools"
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3 python3-venv ffmpeg curl unzip ca-certificates
+sudo apt-get install -y -qq python3 python3-venv ffmpeg git curl unzip ca-certificates
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 12))' \
   || { echo "Songarr needs Python 3.12 or newer (Ubuntu 24.04 and Debian 13 have it)."; exit 1; }
 if ! command -v deno >/dev/null && ! command -v node >/dev/null; then
@@ -82,6 +83,7 @@ sudo systemctl enable --now songarr
 sleep 3
 systemctl --no-pager --lines=5 status songarr || true
 echo
+[ -d "$HERE/.git" ] || echo "Note: this copy isn't a git clone, so it won't update itself. Clone https://github.com/ApexusNULL/Songarr.git instead."
 echo "Songarr is running. Its admin website is http://127.0.0.1:$PORT on this machine;"
 echo "from another computer: ssh -L $PORT:127.0.0.1:$PORT $(id -un)@$(hostname), then open http://127.0.0.1:$PORT."
 if [ -n "$CLUSTER" ]; then
