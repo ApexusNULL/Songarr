@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Release builds can be renamed from the server (Settings → Name and icon), in src/release/res. -->
+    <string name="app_name">Songarr</string>
+</resources>

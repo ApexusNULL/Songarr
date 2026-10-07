@@ -1,0 +1,42 @@
+# ---- Python ----
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# ---- Songarr server data (never commit) ----
+# The database, logs, YouTube sign-in and app updates live in the data folder
+# (default: %PROGRAMDATA%\Songarr), outside this repository. These catch strays:
+*.db
+*.db-wal
+*.db-shm
+*cookies*.txt
+firebase-service-account*.json
+youtube-browser/
+app-updates/
+logs/
+
+# ---- Built apps ----
+dist/
+*.apk
+*.aab
+
+# ---- Android signing and Firebase (private to whoever builds the app) ----
+*.jks
+*.keystore
+key.properties
+google-services.json
+GoogleService-Info.plist
+local.properties
+
+# ---- Editors / OS ----
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# installer build output (installer/build.py)
+/build/
+/dist/

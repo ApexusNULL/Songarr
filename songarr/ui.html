@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Songarr</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%238b5cf6' d='M9 18.5A3.5 3.5 0 1 1 7 15.3V4l12-2v13.5a3.5 3.5 0 1 1-2-3.2V6.3L9 7.6z'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #17181c; --panel: #202127; --panel-2: #272830; --line: #33343d; --text: #e8e8ee; --muted: #9a9aa8;
+  --accent: #8b5cf6; --accent-2: #a78bfa; --ok: #34c77b; --warn: #f0b429; --err: #f0566a; --info: #4aa8ff;
+  --radius: 8px; color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f4f4f7; --panel: #ffffff; --panel-2: #f0f0f4; --line: #e0e0e8; --text: #1b1b22; --muted: #666675;
+          --accent: #7c3aed; --accent-2: #6d28d9; color-scheme: light; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--accent-2); }
+button, input, select { font: inherit; color: inherit; }
+.app { display: grid; grid-template-columns: 210px 1fr; min-height: 100vh; }
+nav { background: var(--panel); border-right: 1px solid var(--line); padding: 18px 10px; position: sticky; top: 0; height: 100vh; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; padding: 0 10px 18px; }
+.brand svg { width: 26px; height: 26px; }
+.brand img { width: 26px; height: 26px; object-fit: contain; border-radius: 6px; }
+.brand-previews { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.bp { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); font-weight: 600; }
+.bp img, .bp svg { width: 28px; height: 28px; object-fit: contain; }
+.bp.dark { background: #0d0d10; color: #e8e8ee; } .bp.light { background: #f4f4f7; color: #17181c; }
+.bp.phone { width: 58px; height: 58px; padding: 0; border-radius: 50%; justify-content: center; overflow: hidden; border: 0; }
+.bp.phone img, .bp.phone svg { width: 36px; height: 36px; } .bp.phone.full img { width: 58px; height: 58px; object-fit: cover; }
+.servers { display: grid; gap: 8px; margin: 12px 0 14px; }
+.srv { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); }
+.srv .who { flex: 1 1 240px; min-width: 0; } .srv .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.srv .edit { flex: 1 1 100%; }
+pre.log { max-height: 220px; overflow: auto; font-size: 11px; background: var(--bg); padding: 8px; border-radius: 6px; white-space: pre-wrap; }
+nav a { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-radius: var(--radius); color: var(--muted); text-decoration: none; margin-bottom: 2px; }
+nav a:hover { background: var(--panel-2); color: var(--text); }
+nav a.on { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
+nav .pill { font-size: 12px; background: var(--panel-2); border-radius: 99px; padding: 0 8px; min-width: 22px; text-align: center; }
+nav a.on .pill { background: var(--accent); color: #fff; }
+main { min-width: 0; }
+header { display: flex; gap: 10px; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+header h1 { font-size: 18px; margin: 0 auto 0 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; background: var(--panel-2); color: var(--muted); font-size: 12px; white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+.btn { border: 1px solid var(--line); background: var(--panel-2); padding: 7px 14px; border-radius: var(--radius); cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, var(--line)); }
+.btn.danger:hover { border-color: var(--err); }
+.btn.small { padding: 3px 9px; font-size: 12px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.content { padding: 20px 24px 60px; }
+.banner { padding: 12px 16px; border-radius: var(--radius); margin-bottom: 16px; border: 1px solid; }
+.banner.warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.banner.err { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+.banner.info { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.filters button { border: 1px solid var(--line); background: transparent; border-radius: 99px; padding: 4px 12px; cursor: pointer; color: var(--muted); }
+.filters button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=text], input[type=number], input[type=search], select { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 7px 10px; min-width: 0; }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.search { width: 260px; max-width: 100%; }
+table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: var(--radius); overflow: hidden; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; background: var(--panel-2); }
+tr:last-child td { border-bottom: 0; }
+td.cover { width: 52px; padding-right: 0; }
+.thumb { width: 40px; height: 40px; border-radius: 4px; background: var(--panel-2); object-fit: cover; display: block; }
+.thumb.ph { background: var(--panel-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23888' fill-opacity='.45' d='M9 18.5A3.5 3.5 0 1 1 7 15.3V4l12-2v13.5a3.5 3.5 0 1 1-2-3.2V6.3L9 7.6z'/%3E%3C/svg%3E") center / 55% no-repeat; }
+.title { font-weight: 600; }
+.sub { color: var(--muted); font-size: 12px; }
+.num { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.badge { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.s-downloaded { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.s-wanted { background: var(--panel-2); color: var(--muted); }
+.s-searching, .s-downloading { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
+.s-review { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.s-failed { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
+.s-ignored, .s-unmonitored { background: var(--panel-2); color: var(--muted); text-decoration: line-through; }
+.actions { white-space: nowrap; text-align: right; }
+.err-text { color: var(--err); font-size: 12px; }
+.pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 12px; color: var(--muted); }
+.cards { display: grid; gap: 12px; }
+.job { display: grid; grid-template-columns: 56px 1fr auto; gap: 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.job .thumb { width: 56px; height: 56px; }
+.bar { height: 6px; background: var(--panel-2); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+.bar > i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+.empty { text-align: center; color: var(--muted); padding: 40px 10px; background: var(--panel); border-radius: var(--radius); border: 1px dashed var(--line); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px; }
+.panel h2 { margin: 0 0 4px; font-size: 16px; }
+.panel p.help { color: var(--muted); margin: 0 0 14px; }
+.form { display: grid; grid-template-columns: 200px 1fr; gap: 12px 16px; align-items: center; max-width: 820px; }
+.form label { color: var(--muted); }
+.form .hint { grid-column: 2; color: var(--muted); font-size: 12px; margin-top: -6px; }
+.copy { display: flex; gap: 6px; }
+.copy input { flex: 1; font-family: ui-monospace, Consolas, monospace; }
+ol.steps { margin: 0 0 14px; padding-left: 20px; color: var(--muted); }
+ol.steps li { margin-bottom: 6px; }
+ol.steps b { color: var(--text); }
+.cands { margin: 8px 0 0; display: grid; gap: 6px; }
+.cand { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center; padding: 8px 10px; background: var(--panel-2); border-radius: 6px; }
+.score { font-variant-numeric: tabular-nums; font-weight: 600; }
+.checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.check { display: flex; gap: 8px; align-items: center; padding: 10px 12px; background: var(--panel-2); border-radius: 6px; }
+#toast { position: fixed; bottom: 20px; right: 20px; display: grid; gap: 8px; z-index: 50; }
+#toast div { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent); padding: 10px 14px; border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.3); max-width: 380px; }
+#toast div.err { border-left-color: var(--err); }
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; }
+  nav { position: static; height: auto; display: flex; gap: 4px; overflow-x: auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .brand { padding: 0 8px; }
+  nav a { flex: none; gap: 8px; }
+  header { padding: 12px 16px; position: static; }
+  .content { padding: 16px; }
+  .form { grid-template-columns: 1fr; }
+  .form .hint { grid-column: 1; }
+  .hide-sm { display: none; }
+  th, td { padding: 8px; }
+  .job { grid-template-columns: 44px 1fr; }
+  .job .thumb { width: 44px; height: 44px; }
+  .job .actions { grid-column: 1 / -1; text-align: left; }
+  .cand { grid-template-columns: 1fr auto; }
+  table.tracks, table.tracks tbody, table.tracks td { display: block; }
+  table.tracks thead { display: none; }
+  table.tracks tr { display: grid; grid-template-columns: 48px 1fr auto; gap: 6px 10px; padding: 10px; border-bottom: 1px solid var(--line); align-items: start; }
+  table.tracks tr:last-child { border-bottom: 0; }
+  table.tracks td { padding: 0; border: 0; }
+  table.tracks td.cover { grid-row: span 2; width: auto; }
+  table.tracks td.actions { grid-column: 2 / -1; text-align: left; }
+  table.tracks td.actions:empty { display: none; }
+  table.tracks td.hide-sm { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav>
+    <div class="brand" id="brand"><svg viewBox="0 0 24 24"><path fill="currentColor" style="color:var(--accent)" d="M9 18.5A3.5 3.5 0 1 1 7 15.3V4l12-2v13.5a3.5 3.5 0 1 1-2-3.2V6.3L9 7.6z"/></svg>Songarr</div>
+    <a href="#/library" data-page="library">Library <span class="pill" id="n-library"></span></a>
+    <a href="#/activity" data-page="activity">Activity <span class="pill" id="n-activity"></span></a>
+    <a href="#/wanted" data-page="wanted">Wanted <span class="pill" id="n-wanted"></span></a>
+    <a href="#/playlists" data-page="playlists">Playlists <span class="pill" id="n-playlists"></span></a>
+    <a href="#/history" data-page="history">History</a>
+    <a href="#/people" data-page="people">People <span class="pill" id="n-people"></span></a>
+    <a href="#/settings" data-page="settings">Settings</a>
+  </nav>
+  <main>
+    <header>
+      <h1 id="page-title">Library</h1>
+      <span class="chip" id="chip-queue"><span class="dot"></span>Idle</span>
+      <button class="btn" id="btn-pause">Pause</button>
+    </header>
+    <div class="content" id="view"></div>
+  </main>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const h = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+
+// ---------------------------------------------------------------- name and icon (Settings → Name and icon)
+const BRAND = {};  // the server fills this in
+const HERE = {};  // which server this page is on, with backup servers (the server fills this in)
+let NAME = "Songarr";
+const NOTE = `<svg viewBox="0 0 24 24"><path fill="currentColor" style="color:var(--accent)" d="M9 18.5A3.5 3.5 0 1 1 7 15.3V4l12-2v13.5a3.5 3.5 0 1 1-2-3.2V6.3L9 7.6z"/></svg>`;
+const DEFAULT_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%238b5cf6' d='M9 18.5A3.5 3.5 0 1 1 7 15.3V4l12-2v13.5a3.5 3.5 0 1 1-2-3.2V6.3L9 7.6z'/%3E%3C/svg%3E";
+function applyBrand(b) {
+  Object.assign(BRAND, b);
+  NAME = h(BRAND.name || "Songarr");
+  document.title = BRAND.name || "Songarr";
+  $("#brand").innerHTML = (BRAND.icon ? `<img src="/brand/icon-64.png?v=${h(BRAND.icon)}" alt="">` : NOTE) + NAME;
+  $('link[rel="icon"]').href = BRAND.icon ? `/brand/icon-32.png?v=${BRAND.icon}` : DEFAULT_FAVICON;
+}
+applyBrand(BRAND);
+const fmtDur = ms => { if (!ms) return ""; const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const fmtSec = s => s == null ? "" : fmtDur(s * 1000);
+const fmtSize = b => !b ? "" : b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`;
+const ago = t => { if (!t) return ""; const d = (Date.now() / 1000 - t); if (d < 60) return "just now"; if (d < 3600) return `${Math.floor(d / 60)} min ago`; if (d < 86400) return `${Math.floor(d / 3600)} h ago`; return new Date(t * 1000).toLocaleDateString(); };
+const when = t => t ? new Date(t * 1000).toLocaleString() : "";
+const eta = (n, pacing) => {
+  if (!n || !pacing?.effective_per_hour) return "";
+  const hours = n / pacing.effective_per_hour;
+  return hours < 1 ? ` · ~${Math.max(1, Math.round(hours * 60))} min left` : ` · ~${hours.toFixed(hours < 10 ? 1 : 0)} h left`;
+};
+const thumb = (url, cls = "thumb") => url
+  ? `<img class="${cls}" loading="lazy" alt="" src="${h(url)}" onerror="this.outerHTML='<div class=&quot;${cls} ph&quot;></div>'">`
+  : `<div class="${cls} ph"></div>`;
+const STATUS_LABEL = {downloaded: "Downloaded", wanted: "Wanted", searching: "Searching", downloading: "Downloading", review: "Needs review", failed: "Failed", ignored: "Ignored"};
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json", "X-Songarr": "1"}, body: JSON.stringify(body)};
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+function toast(msg, err = false) {
+  const d = document.createElement("div"); d.textContent = msg; if (err) d.className = "err";
+  $("#toast").append(d); setTimeout(() => d.remove(), err ? 7000 : 3500);
+}
+async function act(path, body = {}, okMsg) {
+  try { await api(path, body); if (okMsg) toast(okMsg); refresh(); } catch (e) { toast(e.message, true); }
+}
+
+// ---------------------------------------------------------------- state
+const state = {page: "library", status: null, filter: "", q: "", sort: "added", offset: 0, wantedTab: "missing", open: new Set(), playlist: null};
+let timer = null;
+
+function route() {
+  state.pairing = false;  // a question left open on the last page doesn't hold this one
+  const [path, query] = (location.hash.slice(2) || "library").split("?");
+  state.page = ["library", "activity", "wanted", "playlists", "people", "history", "settings"].includes(path) ? path : "library";
+  const params = new URLSearchParams(query || "");
+  if (params.get("error")) toast(params.get("error"), true);
+  if (query) history.replaceState(null, "", `#/${state.page}`);
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.page === state.page));
+  $("#page-title").textContent = {library: "Library", activity: "Activity", wanted: "Wanted", playlists: "Playlists", people: "People", history: "History", settings: "Settings"}[state.page];
+  render();
+}
+window.addEventListener("hashchange", route);
+
+async function refreshStatus() {
+  try { state.status = await api("/api/status"); } catch { return; }
+  const s = state.status, c = s.counts;
+  const q = $("#chip-queue");
+  const waiting = c.wanted;
+  q.innerHTML = s.scan?.running ? `<span class="dot ok"></span>Scanning your music folder · ${(s.scan.files || 0).toLocaleString()} files`
+    : s.cooldown_until ? `<span class="dot err"></span>YouTube cooldown until ${new Date(s.cooldown_until * 1000).toLocaleTimeString()}`
+    : s.paused ? `<span class="dot warn"></span>Paused · ${waiting} waiting`
+    : s.active ? `<span class="dot ok"></span>Downloading · ${waiting} waiting${eta(waiting, s.pacing)}`
+    : `<span class="dot"></span>${waiting ? waiting + " waiting" : "Idle"}`;
+  $("#btn-pause").textContent = s.paused || s.cooldown_until ? "Resume" : "Pause";
+  $("#n-library").textContent = c.downloaded || "";
+  $("#n-activity").textContent = s.active || "";
+  const wantedN = c.wanted + c.failed + c.review + c.searching + c.downloading;
+  $("#n-wanted").textContent = wantedN || "";
+  $("#n-playlists").textContent = "";
+  $("#n-people").textContent = "";
+}
+async function refresh() { await refreshStatus(); render(true); }
+
+$("#btn-pause").onclick = () => {
+  const s = state.status || {};
+  act(s.paused || s.cooldown_until ? "/api/queue/resume" : "/api/queue/pause", {}, s.paused || s.cooldown_until ? "Downloads resumed" : "Downloads paused");
+};
+
+// ---------------------------------------------------------------- views
+async function render(soft = false) {
+  clearTimeout(timer);
+  const v = $("#view");
+  try {
+    if (state.page === "library") { if (!soft || !state.pairing) await renderLibrary(v, soft); }  // not while asking about a delete
+    else if (state.page === "activity") await renderActivity(v);
+    else if (state.page === "wanted") await renderWanted(v, soft);
+    else if (state.page === "history") await renderHistory(v);
+    else if (state.page === "playlists") await renderPlaylists(v);
+    else if (state.page === "people") { if (!soft || !state.pairing) await renderPeople(v); }
+    else if (state.page === "settings") { if (!soft) await renderSettings(v); }
+  } catch (e) { v.innerHTML = `<div class="banner err">${h(e.message)}</div>`; }
+  const every = state.page === "activity" ? 1500 : state.page === "settings" ? 0 : state.page === "people" ? 15000 : 8000;
+  if (every) timer = setTimeout(() => { refreshStatus(); render(true); }, every);
+}
+
+function setupBanner() {
+  // a standby's admin page shows (and changes) the active server's things
+  const standby = HERE.cluster && HERE.state === "standby"
+    ? `<div class="banner info">You're on <b>${h(HERE.name)}</b>, which is standing by. ${HERE.active
+        ? `<b>${h(HERE.active)}</b> is the active server: what you see and change here is on it.`
+        : "No server is active at the moment."} <a href="#/settings">Servers →</a></div>` : "";
+  return standby + setupBannerFor(state.status);
+}
+
+function setupBannerFor(s) {
+  if (!s) return "";
+  if (!s.people?.likes)
+    return `<div class="banner info"><b>Bring your music in to get started.</b> On <a href="#/people">People</a>, each person imports their Spotify library
+      with Exportify (or likes songs in the app), and ${NAME} downloads every song.</div>`;
+  if (!s.checks.ffmpeg || !s.checks.js_runtime)
+    return `<div class="banner err">${!s.checks.ffmpeg ? "FFmpeg was not found. " : ""}${!s.checks.js_runtime ? "No JavaScript runtime (Node or Deno) was found; YouTube downloads need one. " : ""}See Settings → System.</div>`;
+  return "";
+}
+
+function statusBadge(t) {
+  if (!t.monitored) return `<span class="badge s-unmonitored" title="Nobody likes it, has it in a playlist or asked for it any more. The file is kept.">Not wanted</span>`;
+  return `<span class="badge s-${t.status}">${STATUS_LABEL[t.status] || t.status}</span>`;
+}
+function trackActions(t) {
+  const b = [];
+  if (t.youtube_id) b.push(`<a class="btn small" href="https://youtu.be/${h(t.youtube_id)}" target="_blank" rel="noopener" title="Open the YouTube source">YouTube</a>`);
+  if (["failed", "review", "downloaded", "wanted"].includes(t.status) && t.monitored) b.push(`<button class="btn small" data-act="retry" data-id="${h(t.id)}" title="Search and download again">${t.status === "downloaded" ? "Redownload" : "Retry"}</button>`);
+  if (t.file_path || t.status === "downloaded") b.push(`<button class="btn small danger" data-del="${h(t.id)}" data-name="${h(t.title)}" title="Delete this song's file from the server">Delete file</button>`);
+  if (t.status === "ignored") b.push(`<button class="btn small" data-act="unignore" data-id="${h(t.id)}" title="Download it again">Unignore</button>`);
+  else if (t.status !== "downloaded" && !["searching", "downloading"].includes(t.status)) b.push(`<button class="btn small" data-act="ignore" data-id="${h(t.id)}" title="Never download this song">Ignore</button>`);
+  return b.join(" ");
+}
+function wireActions(root) {
+  root.querySelectorAll("[data-act]").forEach(el => el.onclick = () => {
+    const msgs = {retry: "Queued", ignore: "Ignored", unignore: "Back in the queue"};
+    act(`/api/tracks/${el.dataset.id}/${el.dataset.act}`, {}, msgs[el.dataset.act]);
+  });
+  // Delete file: ask what happens next, in place of the buttons
+  root.querySelectorAll("[data-del]").forEach(el => el.onclick = () => {
+    const cell = el.closest("td");
+    const id = el.dataset.del;
+    state.pairing = true; // don't let the page refresh itself away from the question
+    cell.innerHTML = `<div class="sub" style="max-width:300px;white-space:normal;text-align:left;margin-bottom:6px">Delete "${h(el.dataset.name)}" from the server? It stays in people's likes and playlists.</div>
+      <button class="btn small danger" data-go="0" title="Delete it and don't download it again (Unignore brings it back)">Delete</button>
+      <button class="btn small" data-go="1" title="Delete this copy and download a fresh one">Delete &amp; redownload</button>
+      <button class="btn small" data-go="x">Cancel</button>`;
+    cell.querySelectorAll("[data-go]").forEach(b => b.onclick = async () => {
+      state.pairing = false;
+      if (b.dataset.go === "x") return render();
+      await act(`/api/tracks/${id}/delete`, {again: b.dataset.go === "1"}, b.dataset.go === "1" ? "Deleted; downloading a fresh copy" : "Deleted from the server");
+    });
+  });
+}
+
+async function renderLibrary(v, soft) {
+  const c = state.status?.counts || {};
+  const filters = [["", "All", c.total], ["downloaded", "Downloaded", c.downloaded], ["missing", "Missing", (c.wanted || 0) + (c.failed || 0) + (c.review || 0) + (c.searching || 0) + (c.downloading || 0)],
+                   ["ignored", "Ignored", c.ignored], ["unmonitored", "Not wanted", c.unmonitored]];
+  const params = new URLSearchParams({status: state.filter, q: state.q, sort: state.sort, offset: state.offset, limit: 100});
+  if (state.playlist) params.set("playlist", state.playlist.id);
+  const data = await api(`/api/tracks?${params}`);
+  const rows = data.items.map(t => `
+    <tr>
+      <td class="cover">${thumb(t.thumb_url || t.cover_url)}</td>
+      <td><div class="title">${h(t.title)}${t.explicit ? ' <span class="sub" title="Explicit">🅴</span>' : ""}</div><div class="sub">${h(t.artists.join(", "))}</div>
+          ${t.error && t.status !== "downloaded" ? `<div class="err-text">${h(t.error)}</div>` : ""}</td>
+      <td class="hide-sm"><div>${h(t.album || "")}</div><div class="sub">${h((t.release_date || "").slice(0, 4))}</div></td>
+      <td class="num hide-sm">${fmtDur(t.duration_ms)}</td>
+      <td>${statusBadge(t)}${t.status === "downloaded" ? `<div class="sub">${fmtSize(t.file_size)}${t.bitrate ? " · " + Math.round(t.bitrate) + " kbps" : ""}</div>` : ""}</td>
+      <td class="actions">${trackActions(t)}</td>
+    </tr>`).join("");
+  const focus = document.activeElement?.id === "lib-q";
+  v.innerHTML = `${setupBanner()}
+    <div class="toolbar">
+      <div class="filters">${filters.map(([k, label, n]) => `<button data-f="${k}" class="${state.filter === k ? "on" : ""}">${label}${n ? ` · ${n}` : ""}</button>`).join("")}</div>
+      ${state.playlist ? `<button class="btn small" id="clear-pl" title="Show all songs">Playlist: ${h(state.playlist.name)} ✕</button>` : ""}
+      <span style="flex:1"></span>
+      <input type="search" id="lib-q" class="search" placeholder="Search title, artist, album" value="${h(state.q)}" aria-label="Search library">
+      <select id="lib-sort" aria-label="Sort"><option value="added">Recently liked</option><option value="artist">Artist / album</option><option value="title">Title</option></select>
+    </div>
+    ${data.items.length ? `<table class="tracks"><thead><tr><th></th><th>Song</th><th class="hide-sm">Album</th><th class="hide-sm">Time</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="pager"><span>${state.offset + 1}–${state.offset + data.items.length} of ${data.total}</span>
+        <button class="btn small" id="pg-prev" ${state.offset ? "" : "disabled"}>Previous</button>
+        <button class="btn small" id="pg-next" ${state.offset + 100 < data.total ? "" : "disabled"}>Next</button></div>`
+      : `<div class="empty">${state.q || state.filter ? "No songs match." : "No songs yet. Import someone's Spotify library on People (with Exportify), or like songs in the app."}</div>`}`;
+  $("#lib-sort").value = state.sort;
+  $("#clear-pl") && ($("#clear-pl").onclick = () => { state.playlist = null; state.offset = 0; render(); });
+  v.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { state.filter = b.dataset.f; state.offset = 0; render(); });
+  const q = $("#lib-q");
+  if (focus) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  let deb; q.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { state.q = q.value; state.offset = 0; render(); }, 250); };
+  $("#lib-sort").onchange = e => { state.sort = e.target.value; state.offset = 0; render(); };
+  $("#pg-prev") && ($("#pg-prev").onclick = () => { state.offset = Math.max(0, state.offset - 100); render(); });
+  $("#pg-next") && ($("#pg-next").onclick = () => { state.offset += 100; render(); });
+  wireActions(v);
+}
+
+async function renderActivity(v) {
+  const [a, hist] = await Promise.all([api("/api/activity"), api("/api/history?limit=25")]);
+  const c = state.status?.counts || {};
+  const jobs = a.active.map(j => `
+    <div class="job">
+      ${thumb(j.cover_url)}
+      <div style="min-width:0">
+        <div class="title">${h(j.title)}</div><div class="sub">${h(j.artists.join(", "))} · ${h(j.album || "")}</div>
+        <div class="bar"><i style="width:${j.stage === "downloading" || j.percent ? j.percent : 4}%"></i></div>
+      </div>
+      <div class="actions sub">${h(j.stage)}${j.stage === "downloading" ? ` · ${j.percent}%${j.speed ? " · " + fmtSize(j.speed) + "/s" : ""}` : ""}</div>
+    </div>`).join("");
+  v.innerHTML = `${setupBanner()}
+    ${a.cooldown_until ? `<div class="banner err">YouTube asked ${NAME} to slow down, so downloads are paused until <b>${new Date(a.cooldown_until * 1000).toLocaleTimeString()}</b> and then continue at ${a.pacing.effective_per_hour} songs/hour. Each pause in a row lasts twice as long, and the pace recovers on its own as downloads succeed. Resume skips the wait.</div>` : ""}
+    ${a.paused ? `<div class="banner warn">Downloads are paused. Click Resume to continue.</div>` : ""}
+    <div class="toolbar"><span class="sub">${a.active.length} of ${a.workers} slots busy · ${c.wanted || 0} waiting${eta(c.wanted, a.pacing)} · ${c.failed || 0} failed · ${c.review || 0} need review ·
+      pace <b title="Songs per hour, kept under YouTube's limits">${a.pacing.effective_per_hour}/hour</b>${a.pacing.rate_factor < 1 ? ` (reduced from ${a.pacing.max_per_hour} after YouTube pushed back)` : ""}</span></div>
+    <div class="cards">${jobs || `<div class="empty">Nothing downloading right now.${c.wanted ? ` ${c.wanted} songs are waiting.` : ""}</div>`}</div>
+    <h3 style="margin:26px 0 10px">Recent events</h3>
+    ${historyTable(hist)}`;
+}
+
+function historyTable(rows) {
+  if (!rows.length) return `<div class="empty">Nothing has happened yet.</div>`;
+  const tag = e => ({downloaded: "s-downloaded", failed: "s-failed", "sync-failed": "s-failed", review: "s-review", paused: "s-failed", imported: "s-downloaded"}[e] || "s-wanted");
+  return `<table><thead><tr><th>When</th><th>Event</th><th>Details</th></tr></thead><tbody>${rows.map(r => `
+    <tr><td class="num" title="${h(when(r.time))}">${ago(r.time)}</td><td><span class="badge ${tag(r.event)}">${h(r.event)}</span></td>
+        <td>${r.title ? `<div class="title">${h(r.title)}</div>` : ""}<div class="sub">${h(r.message || "")}</div></td></tr>`).join("")}</tbody></table>`;
+}
+
+async function renderPlaylists(v) {
+  const pls = await api("/api/playlists");
+  const row = p => {
+    const pct = p.songs ? Math.round(100 * p.downloaded / p.songs) : 0;
+    return `<tr>
+      <td class="cover">${p.liked ? `<div class="thumb" style="display:grid;place-items:center;font-size:20px;color:var(--accent)">♥</div>` : thumb(p.image_url)}</td>
+      <td><div class="title">${h(p.name)}</div><div class="sub">${h(p.owner || "")}</div></td>
+      <td class="hide-sm" style="min-width:170px"><div class="sub">${p.downloaded} of ${p.songs} downloaded</div><div class="bar"><i style="width:${pct}%"></i></div></td>
+      <td class="actions">${p.songs ? `<button class="btn small" data-view="${h(p.id)}" data-name="${h(p.owner ? p.name + " (" + p.owner + ")" : p.name)}">Songs</button>` : ""}</td>
+    </tr>`;
+  };
+  v.innerHTML = `${setupBanner()}
+    <p class="sub" style="margin:0 0 12px">Everyone's Liked Songs and playlists. People make and change their playlists in the app (or bring them over from Spotify with Exportify on <a href="#/people">People</a>).
+      Each is also saved as a <b>.m3u8</b> file in your library's <b>Playlists</b> folder for Plex, Jellyfin and music players.</p>
+    ${pls.length ? `<table class="tracks"><thead><tr><th></th><th>Playlist</th><th class="hide-sm">Progress</th><th></th></tr></thead><tbody>${pls.map(row).join("")}</tbody></table>`
+                 : `<div class="empty">No playlists yet.</div>`}`;
+  v.querySelectorAll("[data-view]").forEach(b => b.onclick = () => { state.playlist = {id: b.dataset.view, name: b.dataset.name}; state.filter = ""; state.offset = 0; location.hash = "#/library"; });
+}
+
+async function renderPeople(v) {
+  const people = await api("/api/users");
+  const st = state.status || {};
+  const card = u => {
+    const devices = u.devices.map(d => `
+      <div class="cand" style="grid-template-columns:1fr auto">
+        <div><b>${h(d.name || "Device")}</b><div class="sub">paired ${ago(d.created)}${d.last_seen ? " · last used " + ago(d.last_seen) : ""}</div></div>
+        <button class="btn small" data-revoke="${d.id}">Sign out</button>
+      </div>`).join("");
+    return `<div class="panel">
+      <div class="toolbar" style="margin-bottom:6px"><h2 style="margin:0">${h(u.name)}</h2>${u.is_admin ? '<span class="badge s-wanted">Main profile</span>' : ""}
+        <span style="flex:1"></span>
+        <button class="btn small" data-rename="${u.id}" data-name="${h(u.name)}">Rename</button>
+        ${u.is_admin ? "" : `<button class="btn small" data-delete="${u.id}" data-name="${h(u.name)}">Remove</button>`}</div>
+      <div class="sub" style="margin:10px 0 6px">Music</div>
+      <div class="sub">${u.likes.toLocaleString()} liked song${u.likes === 1 ? "" : "s"} · ${u.playlists} playlist${u.playlists === 1 ? "" : "s"}</div>
+      <div style="margin-top:8px"><button class="btn small primary" data-import="${u.id}" data-name="${h(u.name)}" title="A .csv or the Export All .zip from exportify.app">Import from Exportify…</button></div>
+      <div class="sub" style="margin-top:6px">To bring their Spotify library over, they open <a href="https://exportify.app" target="_blank" rel="noopener">exportify.app</a>,
+        sign in with Spotify and click <b>Export All</b> (a .zip), then you import that file here. Liked Songs (liked.csv) become their likes;
+        every other file becomes one of their own playlists. Importing again later adds what's new.</div>
+      <div class="sub" style="margin:16px 0 6px">Apps signed in</div>
+      <div class="cands">${devices || `<div class="sub">No phones or computers yet.</div>`}</div>
+      <div style="margin-top:8px"><button class="btn small" data-pair="${u.id}">Pair a phone or computer</button></div>
+      <div id="pair-${u.id}"></div>
+      <div class="sub" style="margin:16px 0 6px">Password sign-in</div>
+      <div class="sub">${u.has_password ? `Apps can also sign in as <b>${h(u.login)}</b> with a password.`
+                                       : "No password yet: apps sign in with a pairing code from here."}</div>
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn small" data-setpw="${u.id}" data-login="${h(u.login || u.name)}">${u.has_password ? "Change password" : "Set a password"}</button>
+        ${u.has_password ? `<button class="btn small" data-clearpw="${u.id}" data-name="${h(u.name)}">Remove password</button>` : ""}</div>
+      <div id="pw-${u.id}"></div>
+    </div>`;
+  };
+  v.innerHTML = `${people.map(card).join("")}
+    <div class="panel"><h2>Add a person</h2><p class="help">Each person gets their own likes, playlists, history and recommendations. Songs are downloaded once and shared.</p>
+      <div class="copy" style="max-width:420px"><input type="text" id="new-person" placeholder="Name" maxlength="40"><button class="btn primary" id="add-person">Add</button></div></div>`;
+  $("#add-person").onclick = async () => { const n = $("#new-person").value.trim(); if (!n) return; await act("/api/users", {name: n}, `Added ${n}`); renderPeople(v); };
+  v.querySelectorAll("[data-revoke]").forEach(b => b.onclick = async () => { await act(`/api/devices/${b.dataset.revoke}/revoke`, {}, "Signed out"); renderPeople(v); });
+  v.querySelectorAll("[data-rename]").forEach(b => b.onclick = async () => {
+    const n = prompt("New name", b.dataset.name); if (!n) return; await act(`/api/users/${b.dataset.rename}/rename`, {name: n}, "Renamed"); renderPeople(v); });
+  v.querySelectorAll("[data-delete]").forEach(b => b.onclick = async () => {
+    if (!confirm(`Remove ${b.dataset.name}'s profile? Their likes, playlists and history in ${BRAND.name} are deleted; downloaded songs stay.`)) return;
+    await act(`/api/users/${b.dataset.delete}/delete`, {}, "Removed"); renderPeople(v); });
+  v.querySelectorAll("[data-setpw]").forEach(b => b.onclick = () => {
+    const id = b.dataset.setpw;
+    state.pairing = true; // keep the form while the page refreshes itself
+    $(`#pw-${id}`).innerHTML = `<div class="copy" style="max-width:640px;margin-top:10px;flex-wrap:wrap;gap:6px">
+        <input type="text" id="pwl-${id}" value="${h(b.dataset.login)}" placeholder="Sign-in name" maxlength="40" autocomplete="off" aria-label="Sign-in name">
+        <input type="password" id="pwp-${id}" placeholder="Password, 8+ characters" maxlength="200" autocomplete="new-password" aria-label="Password">
+        <button class="btn primary" id="pws-${id}">Save</button><button class="btn" id="pwc-${id}">Cancel</button></div>
+      <div class="sub">In the app: "Sign in with a password", with the server address from Settings → App access.</div>`;
+    $(`#pwc-${id}`).onclick = () => { state.pairing = false; renderPeople(v); };
+    $(`#pws-${id}`).onclick = async () => {
+      try {
+        await api(`/api/users/${id}/password`, {login: $(`#pwl-${id}`).value, password: $(`#pwp-${id}`).value});
+        toast("Password saved"); state.pairing = false; renderPeople(v);
+      } catch (e) { toast(e.message, true); }
+    };
+    $(`#pwp-${id}`).focus();
+  });
+  v.querySelectorAll("[data-clearpw]").forEach(b => b.onclick = async () => {
+    if (!confirm(`Remove ${b.dataset.name}'s password? Apps already signed in stay signed in; new ones will need a pairing code.`)) return;
+    await act(`/api/users/${b.dataset.clearpw}/password`, {clear: true}, "Password removed"); renderPeople(v); });
+  v.querySelectorAll("[data-import]").forEach(b => b.onclick = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,.zip";
+    input.onchange = async () => {
+      const f = input.files[0];
+      if (!f) return;
+      b.disabled = true;
+      toast(`Importing ${f.name}…`);
+      try {
+        const r = await api(`/api/users/${b.dataset.import}/import`, {filename: f.name, data: await base64(f)});
+        const bits = [];
+        if (r.liked) bits.push(`${r.liked} liked songs`);
+        if (r.playlists.length) bits.push(`${r.playlists.length} playlist${r.playlists.length === 1 ? "" : "s"}`);
+        toast(`Imported ${bits.join(" and ") || "nothing new"} for ${b.dataset.name}`
+          + (r.new_songs ? `. ${r.new_songs} songs are new and will download` : "")
+          + (r.skipped.length ? `. Already there: ${r.skipped.join(", ")}` : ""));
+      } catch (err) { toast(err.message, true); }
+      b.disabled = false;
+    };
+    input.click();
+  });
+  v.querySelectorAll("[data-pair]").forEach(b => b.onclick = async () => {
+    try {
+      const p = await api(`/api/users/${b.dataset.pair}/pair`, {});
+      state.pairing = true;
+      $(`#pair-${b.dataset.pair}`).innerHTML = `<div class="cand" style="grid-template-columns:auto 1fr;margin-top:10px;align-items:start">
+        <div style="background:#fff;padding:6px;border-radius:6px;line-height:0">${p.qr_svg}</div>
+        <div><b>Scan this in the ${NAME} app</b>, or type the code <b style="font-family:ui-monospace,Consolas,monospace;font-size:18px;letter-spacing:.08em">${h(p.code)}</b>.
+          <div class="sub">Works once, expires at ${new Date(p.expires * 1000).toLocaleTimeString()}.</div>
+          ${p.server ? `<div class="sub">Server address in the code: ${h(p.server)}</div>`
+                     : `<div class="err-text">No app address set yet: add your Cloudflare Tunnel hostname in Settings → App access, then make a new code.</div>`}
+          <button class="btn small" style="margin-top:8px" id="pair-done-${b.dataset.pair}">Done</button></div></div>`;
+      $(`#pair-done-${b.dataset.pair}`).onclick = () => { state.pairing = false; renderPeople(v); };
+    } catch (e) { toast(e.message, true); }
+  });
+}
+
+async function renderHistory(v) {
+  v.innerHTML = historyTable(await api("/api/history?limit=300"));
+}
+
+async function renderWanted(v, soft) {
+  const tab = state.wantedTab;
+  const data = await api(`/api/tracks?status=${tab === "review" ? "review" : "missing"}&limit=300`);
+  let items = data.items;
+  if (tab === "missing") items = items.filter(t => t.status !== "review");
+  const cands = {};
+  if (tab === "review") await Promise.all(items.filter(t => state.open.has(t.id)).map(async t => cands[t.id] = await api(`/api/tracks/${t.id}/candidates`)));
+  const c = state.status?.counts || {};
+  const row = t => {
+    const open = state.open.has(t.id);
+    return `<tr>
+      <td class="cover">${thumb(t.thumb_url || t.cover_url)}</td>
+      <td><div class="title">${h(t.title)}</div><div class="sub">${h(t.artists.join(", "))} · ${h(t.album || "")} · ${fmtDur(t.duration_ms)}</div>
+        ${t.error ? `<div class="err-text">${h(t.error)}${t.next_attempt && t.status === "failed" ? ` · next try ${new Date(t.next_attempt * 1000).toLocaleString()}` : ""}</div>` : ""}
+        ${tab === "review" && open ? `<div class="cands">${(cands[t.id] || []).map(x => `
+          <div class="cand"><div style="min-width:0"><a href="https://youtu.be/${h(x.youtube_id)}" target="_blank" rel="noopener">${h(x.title)}</a><div class="sub">${h(x.channel || "")} · ${h(x.source)}</div></div>
+            <span class="num">${fmtSec(x.duration)}</span><span class="score" title="Match score">${(x.score * 100).toFixed(0)}%</span>
+            <button class="btn small primary" data-pick="${h(t.id)}" data-yt="${h(x.youtube_id)}">Use this</button></div>`).join("") || `<div class="sub">No candidates saved.</div>`}
+          <div class="copy" style="margin-top:6px"><input type="text" placeholder="…or paste a YouTube link" id="paste-${h(t.id)}" aria-label="YouTube link">
+            <button class="btn small primary" data-paste="${h(t.id)}">Use link</button></div></div>` : ""}
+      </td>
+      <td>${statusBadge(t)}</td>
+      <td class="actions">${tab === "review" ? `<button class="btn small" data-toggle="${h(t.id)}">${open ? "Hide" : "Choose upload"}</button> ` : ""}${trackActions(t)}</td>
+    </tr>`;
+  };
+  v.innerHTML = `${setupBanner()}
+    <div class="toolbar">
+      <div class="filters">
+        <button data-tab="missing" class="${tab === "missing" ? "on" : ""}">Missing · ${(c.wanted || 0) + (c.failed || 0) + (c.searching || 0) + (c.downloading || 0)}</button>
+        <button data-tab="review" class="${tab === "review" ? "on" : ""}">Needs review · ${c.review || 0}</button>
+      </div>
+      <span style="flex:1"></span>
+      ${tab === "missing" && c.failed ? `<button class="btn" id="retry-failed">Retry all failed (${c.failed})</button>` : ""}
+      ${tab === "review" && c.review ? `<button class="btn" id="retry-review" title="Search YouTube again for every song here">Retry all (${c.review})</button>` : ""}
+    </div>
+    ${tab === "review" ? `<p class="sub" style="margin:0 0 12px">These songs had no confident YouTube match. Pick the right upload (links open YouTube so you can listen first), or paste your own.</p>` : ""}
+    ${items.length ? `<table class="tracks"><tbody>${items.map(row).join("")}</tbody></table>` : `<div class="empty">${tab === "review" ? "Nothing needs review." : "Nothing missing. Every liked song is downloaded."}</div>`}`;
+  v.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { state.wantedTab = b.dataset.tab; render(); });
+  v.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => { const id = b.dataset.toggle; state.open.has(id) ? state.open.delete(id) : state.open.add(id); render(); });
+  v.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => { state.open.delete(b.dataset.pick); act(`/api/tracks/${b.dataset.pick}/pick`, {youtube: b.dataset.yt}, "Queued with your pick"); });
+  v.querySelectorAll("[data-paste]").forEach(b => b.onclick = () => { const id = b.dataset.paste; act(`/api/tracks/${id}/pick`, {youtube: $(`#paste-${id}`).value}, "Queued with your link"); state.open.delete(id); });
+  $("#retry-failed") && ($("#retry-failed").onclick = () => act("/api/retry-failed", {}, "Retrying failed songs"));
+  $("#retry-review") && ($("#retry-review").onclick = e => {
+    e.target.disabled = true;
+    act("/api/retry-review", {}, "Searching again. Songs that still have no confident match come back here.");
+  });
+  wireActions(v);
+}
+
+async function renderSettings(v) {
+  const s = await api("/api/settings");
+  const st = state.status || await api("/api/status");
+  const deps = st.dependencies || {};
+  const brand = await api("/api/branding");
+  const ok = (b, yes, no, optional = false) => `<div class="check"><span class="dot ${b ? "ok" : optional ? "" : "err"}"></span><div><div>${b ? yes : no}</div></div></div>`;
+  v.innerHTML = `
+    <div class="panel">
+      <h2>Downloads</h2>
+      <p class="help">Applied to new downloads; files already in your library are left alone.</p>
+      <div class="form">
+        <label for="library_root">Library folder</label><input type="text" id="library_root" value="${h(s.library_root)}">
+        <div class="hint">Songs are saved as Artist\\Album (Year)\\01 - Title, with cover art. Music already in the folder
+          (from anywhere) is found and used where it is instead of being downloaded again.
+          <div style="margin-top:6px" id="scan-info"></div></div>
+        <label for="audio_format">Format</label>
+        <select id="audio_format"><option value="m4a">M4A (AAC, not re-encoded)</option><option value="opus">Opus (not re-encoded)</option><option value="mp3">MP3 (re-encoded)</option></select>
+        <label for="max_per_hour">Max songs per hour</label><input type="number" id="max_per_hour" min="10" max="2000" value="${h(s.max_per_hour)}">
+        <div class="hint">YouTube allows roughly 300 videos an hour without signing in; 250 stays safely under that. If YouTube pushes back, ${NAME} halves this on its own and recovers gradually.</div>
+        <label for="workers">Parallel downloads</label><input type="number" id="workers" min="1" max="8" value="${h(s.workers)}">
+        <div class="hint">Songs worked on at once. Requests to YouTube are still spaced out to the hourly limit above.</div>
+        <label for="match_threshold">Match strictness</label><input type="number" id="match_threshold" min="0.3" max="0.95" step="0.05" value="${h(s.match_threshold)}">
+        <div class="hint">0.70 by default. Songs scoring below this go to Wanted → Needs review instead of downloading.</div>
+        <label for="write_playlist_files">Playlist files</label><label style="color:var(--text)"><input type="checkbox" id="write_playlist_files" ${s.write_playlist_files ? "checked" : ""}> Save .m3u8 playlists in the library's Playlists folder</label>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>YouTube sign-in</h2>
+      <p class="help">When YouTube says "Sign in to confirm you're not a bot", it wants a signed-in session. Click below: a separate Chrome window opens on YouTube Music.
+        Sign in there yourself and complete any check YouTube shows, then click <b>Done</b>. ${NAME} keeps that session for downloads and closes the window.
+        A spare Google account is safer than your main one: yt-dlp warns that heavy downloading can get an account restricted.</p>
+      <div id="yt-signin"><span class="sub">Checking…</span></div>
+      <details style="margin-top:14px"><summary class="sub" style="cursor:pointer">Advanced: use an exported cookies.txt instead</summary>
+      <div class="form" style="margin-top:10px">
+        <label for="cookies_file">cookies.txt path</label><input type="text" id="cookies_file" value="${h(s.cookies_file)}" placeholder="C:\\Users\\you\\Documents\\youtube-cookies.txt">
+        <div class="hint">Keep this file private: it can sign in as you. Leave empty to download without signing in.</div>
+      </div></details>
+    </div>
+    <div class="panel">
+      <h2>App access</h2>
+      <p class="help">The ${NAME} apps talk to a separate, API-only server on this PC at <b>http://127.0.0.1:8486</b>. Its only web page is the app's download page (below); every other request needs a device token from pairing.
+        Expose only that port, for example with a Cloudflare Tunnel pointing your hostname at <code>http://localhost:8486</code>. Never expose this admin site (port 8484).</p>
+      <div class="form">
+        <label for="public_url">App address</label><input type="text" id="public_url" value="${h(s.public_url)}" placeholder="https://music.yourdomain.com">
+        <div class="hint">Put into the pairing QR codes so phones know where to connect. Must be https://.</div>
+        <label for="download_page">Download page</label><label style="color:var(--text)"><input type="checkbox" id="download_page" ${s.download_page ? "checked" : ""}> Anyone can get the Android app at
+          ${s.public_url ? `<a href="${h(s.public_url)}/download" target="_blank" rel="noopener">${h(s.public_url)}/download</a>` : "your app address followed by <b>/download</b>"}</label>
+        <div class="hint">Send people that link: it shows, with pictures, how to install the app (including Samsung's Auto Blocker) and sign in. It shows nothing about this server or the people on it, so give them the address and their sign-in yourself; the app does nothing without them.</div>
+        <label for="wikimedia_contact">Wikipedia contact (optional)</label><input type="text" id="wikimedia_contact" value="${h(s.wikimedia_contact)}" placeholder="you@example.com">
+        <div class="hint">Artist bios come from Wikipedia, which allows 10 requests a minute from apps that don't say who they are, or 200 with an email or web address. Bios still work without it; they just fill in more slowly the first time.</div>
+        <label for="lastfm_api_key">Last.fm API key (optional)</label><input type="text" id="lastfm_api_key" value="${h(s.lastfm_api_key)}" placeholder="32 characters">
+        <div class="hint">Bios for artists Wikipedia doesn't cover. Get a free key at <b>last.fm/api/account/create</b> (sign in to Last.fm; the application name can be "${NAME}", callback left empty).</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Name and icon</h2>
+      <p class="help">What everyone sees: this website, the apps on phones and computers, notifications, the icon by the clock and the desktop shortcut.</p>
+      <div class="form">
+        <label for="brand_name">Name</label><input type="text" id="brand_name" maxlength="30" value="${h(brand.name)}" placeholder="Songarr">
+        <label for="brand_icon">Icon</label>
+        <div>
+          <div class="brand-previews" id="brand-previews"></div>
+          <input type="file" id="brand_icon" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,image/x-icon,.ico,.svg">
+          ${brand.icon ? `<button class="btn small" id="brand-reset">Use Songarr's icon again</button>` : ""}
+        </div>
+        <div class="hint">A square picture, 512 × 512 or bigger, looks best; a logo on a see-through background works well. PNG, JPEG, WebP, GIF, BMP, ICO or SVG.</div>
+        <label for="brand_background">Phone icon background</label><input type="color" id="brand_background" value="${h(brand.background)}">
+        <div class="hint">Behind the icon on Android home screens.</div>
+        <span></span><div><button class="btn primary" id="brand-save">Save name and icon</button></div>
+      </div>
+      <h3 style="margin:22px 0 6px">On phones' home screens</h3>
+      <p class="help">Inside the app, phones show the new name and icon the next time it opens. The icon and name on their home screens belong to the app itself,
+        so they change when the app is rebuilt with them and installed as an update (phones offer it, like any other update).</p>
+      <div id="app-build"></div>
+      <details style="margin-top:12px"><summary>Build settings</summary>
+        <div class="form" style="margin-top:10px">
+          <label for="app_source_dir">App source folder</label><input type="text" id="app_source_dir" value="${h(s.app_source_dir)}" placeholder="${h(brand.app.app_dir)}">
+          <div class="hint">The <code>app</code> folder of Songarr's source code (with pubspec.yaml in it).</div>
+          <label for="flutter_path">Flutter</label><input type="text" id="flutter_path" value="${h(s.flutter_path)}" placeholder="${h(brand.app.flutter || "flutter.bat, found automatically on the PATH")}">
+          <div class="hint">Only needed if Flutter isn't on the PATH.</div>
+        </div>
+      </details>
+    </div>
+    <div class="panel" id="servers-panel"><h2>Servers</h2></div>
+    <div class="panel">
+      <h2>System</h2>
+      <div class="checks">
+        ${ok(st.checks.ffmpeg, "FFmpeg found", "FFmpeg not found: install it or set the path below")}
+        ${ok(st.checks.js_runtime, `JavaScript runtime: ${h(st.checks.js_runtime || "")}`, "No Node/Deno found: YouTube needs one")}
+        ${ok(st.checks.library, "Library folder reachable", "Library folder not reachable")}
+        ${ok(true, `yt-dlp ${h(st.yt_dlp)} · ${NAME} ${h(st.version)}`, "")}
+        ${deps.restart_pending ? ok(false, "", `Updated: ${NAME} restarts to use it as soon as nobody's listening`, true) : ""}
+        ${ok(st.checks.cookies, "YouTube cookies loaded", "Not signed in to YouTube (optional)", true)}
+      </div>
+      <div class="form" style="margin-top:14px">
+        <label for="auto_update">Automatic updates</label>
+        <div><label style="color:var(--text)"><input type="checkbox" id="auto_update" ${s.auto_update ? "checked" : ""}> Keep yt-dlp and ${NAME}'s other packages up to date</label>
+          <div class="hint">New stable releases are installed every few hours (yt-dlp and ytmusicapi always; the others only within the same major version), checked, and ${NAME} restarts when nobody's listening. If an update doesn't work, the previous version is kept.
+            <br>${Object.entries(deps.installed || {}).map(([k, v]) => `${h(k)} ${h(v)}`).join(" · ")}
+            ${deps.checked ? ` · checked ${ago(deps.checked)}` : ""}${deps.error ? `<br><span class="err-text">${h(deps.error)}</span>` : ""}</div>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn small" id="update-check">Check for updates now</button>
+            ${deps.restart_pending ? `<button class="btn small primary" id="restart">Restart ${NAME} now</button>` : ""}</div></div>
+        <label for="ffmpeg_path">FFmpeg path</label><input type="text" id="ffmpeg_path" value="${h(s.ffmpeg_path)}" placeholder="Found automatically">
+        <span></span><div><button class="btn" id="shutdown">Shut down ${NAME}</button></div>
+      </div>
+    </div>
+    <button class="btn primary" id="save">Save settings</button>`;
+  $("#audio_format").value = s.audio_format;
+  const fields = ["library_root", "audio_format", "max_per_hour", "workers", "match_threshold", "cookies_file", "ffmpeg_path", "public_url", "wikimedia_contact", "lastfm_api_key", "app_source_dir", "flutter_path"];
+  const checks = ["write_playlist_files", "auto_update", "download_page"];
+  $("#update-check").onclick = async e => {
+    e.target.disabled = true; e.target.textContent = "Checking…";
+    try {
+      const r = await api("/api/system/update-check", {});
+      const names = Object.entries(r.found || {}).map(([k, v]) => `${k} ${v.to}`);
+      toast(r.error ? r.error : names.length ? `Updated: ${names.join(", ")}` : "Everything is up to date", !!r.error);
+    } catch (err) { toast(err.message, true); }
+    await refreshStatus(); render();
+  };
+  $("#restart") && ($("#restart").onclick = async () => {
+    try { await api("/api/system/restart", {}); } catch {}
+    document.body.innerHTML = `<div class="content"><div class="empty">${NAME} is restarting… this page reloads in a few seconds.</div></div>`;
+    setTimeout(() => location.reload(), 8000);
+  });
+  const collect = () => {
+    const out = {...Object.fromEntries(fields.filter(f => $("#" + f)).map(f => [f, $("#" + f).value])),
+                 ...Object.fromEntries(checks.map(f => [f, $("#" + f).checked]))};
+    return out;
+  };
+  $("#save").onclick = async () => { try { await api("/api/settings", collect()); toast("Settings saved"); await refreshStatus(); renderSettings(v); } catch (e) { toast(e.message, true); } };
+  $("#shutdown").onclick = async () => {
+    if (!confirm(`Stop ${BRAND.name}? Downloads in progress will resume next time it starts.`)) return;
+    try { await api("/api/system/shutdown", {}); } catch {}
+    document.body.innerHTML = `<div class="content"><div class="empty">${NAME} has shut down. Start it again with the ${NAME} shortcut on the desktop.</div></div>`;
+  };
+  renderYouTubeSignIn();
+  renderScan(st.scan);
+  renderServers();
+  brandForm(v, brand, collect);
+}
+
+// Servers: a backup server that takes over by itself (cluster.py), all managed from here
+function showRestarting() {
+  document.body.innerHTML = `<div class="content"><div class="empty">${NAME} is restarting… this page reloads in a few seconds.</div></div>`;
+  setTimeout(() => location.reload(), 9000);
+}
+
+async function renderServers() {
+  const box = $("#servers-panel");
+  if (!box) return;
+  clearTimeout(state.serversTimer);
+  let c;
+  try { c = await api("/api/cluster"); } catch (e) { box.innerHTML = `<h2>Servers</h2><span class="err-text">${h(e.message)}</span>`; return; }
+  if (!$("#servers-panel")) return;
+  if (!c.enabled) {
+    box.innerHTML = `<h2>Servers</h2>
+      <p class="help">Run a second ${NAME} server as a backup (an Ubuntu box, say). Both use the music on your NAS. One is active at a time;
+        if it stops, the other takes over by itself within about a minute, and phones switch to it on their own. You manage every server from this page.</p>
+      <div class="form">
+        <label for="cl-folder">Shared folder</label><input type="text" id="cl-folder" placeholder="\\\\nas\\share\\Songarr servers">
+        <div class="hint">A folder on the NAS that every server can reach, as this PC sees it. The active server keeps a copy of everything there.</div>
+        <label for="cl-name">This server's name</label><input type="text" id="cl-name" value="${h(c.suggested_name || "")}">
+        <label for="cl-role">This server is</label>
+        <select id="cl-role"><option value="main">the main server (active whenever it's running)</option><option value="backup">a backup (takes over while the main one is away)</option></select>
+        <span></span><div><button class="btn primary" id="cl-join">Turn on</button>
+          <div class="hint" style="margin-top:6px">${NAME} restarts. Then set up the other server; the setup guide's "Backup server" section shows how.</div></div>
+      </div>`;
+    $("#cl-join").onclick = async e => {
+      e.target.disabled = true;
+      try { await api("/api/cluster/setup", {folder: $("#cl-folder").value, name: $("#cl-name").value, role: $("#cl-role").value}); showRestarting(); }
+      catch (err) { toast(err.message, true); e.target.disabled = false; }
+    };
+    return;
+  }
+  const field = (n, key, label, hint) => `<label for="cl-${key}">${label}</label><input type="text" id="cl-${key}" value="${h((n.local || {})[key] || "")}">${hint ? `<div class="hint">${hint}</div>` : ""}`;
+  const node = n => `<div class="srv">
+      <div class="who"><b>${h(n.name)}</b>${n.me ? ' <span class="badge">this one</span>' : ""}
+        <div class="sub">${n.role === "main" ? "Main" : "Backup"} · ${h(n.os || "")} · ${NAME} ${h(n.version || "")}${n.app_url ? ` · ${h(n.app_url)}` : " · no app address"}</div></div>
+      <div>${n.active ? '<span class="badge s-downloaded">Active</span>' : n.alive ? '<span class="badge s-wanted">Standing by</span>' : '<span class="badge s-failed">Away</span>'}</div>
+      <div class="acts">
+        ${!n.active && n.alive ? `<button class="btn small primary" data-cl="make-active" data-to="${h(n.name)}">Make active</button>` : ""}
+        ${n.alive ? `<button class="btn small" data-cl="update-check" data-to="${h(n.name)}">Check for updates</button>
+                     <button class="btn small" data-cl="restart" data-to="${h(n.name)}">Restart</button>` : ""}
+        <button class="btn small" data-cl-edit="${h(n.name)}">${state.clEdit === n.name ? "Close" : "Its folders…"}</button></div>
+      ${state.clEdit === n.name ? `<div class="edit"><div class="form" style="margin-top:10px">
+          ${field(n, "library_root", "Music folder", "Where this server finds the music on the NAS (X:\\Music here, /mnt/nas/Music on Linux…).")}
+          ${field(n, "podcast_root", "Podcast folder", "Empty: a Podcasts folder beside the music.")}
+          ${field(n, "public_url", "App address", "How phones reach this server (https://…). Phones switch between the servers' addresses.")}
+          ${field(n, "ffmpeg_path", "FFmpeg", "Empty: found automatically.")}
+          <span></span><div><button class="btn primary small" data-cl-save="${h(n.name)}">Save for ${h(n.name)}</button></div>
+        </div></div>` : ""}
+    </div>`;
+  box.innerHTML = `<h2>Servers</h2>
+    <p class="help">These servers share the music on your NAS (${h(c.folder)}). One is active and does everything; if it stops, a standby takes over within about a minute,
+      and phones switch on their own. ${c.state === "active"
+        ? `This server copies everything to the shared folder when something changes${c.snapshot ? ` (last ${ago(c.snapshot)})` : ""}.`
+        : `This server keeps its copy up to date${c.imported_at ? ` (last ${ago(c.imported_at)})` : ""}.`}
+      ${c.handover ? `<b>Handing over to ${h(c.handover)} once nobody's listening.</b>` : ""}</p>
+    ${c.error ? `<div class="banner err">${h(c.error)}</div>` : ""}
+    <div class="servers">${c.nodes.map(node).join("") || '<div class="empty">No servers have checked in yet.</div>'}</div>
+    <button class="btn small" id="cl-leave">Stop sharing (this server only)</button>`;
+  box.querySelectorAll("[data-cl]").forEach(b => b.onclick = async () => {
+    const what = b.dataset.cl, to = b.dataset.to;
+    if (what === "restart" && !confirm(`Restart ${to}?`)) return;
+    b.disabled = true;
+    try {
+      const r = await api("/api/cluster/command", {to, kind: what});
+      if (what === "update-check") {
+        const names = Object.entries(r.found || {}).map(([k, v]) => `${k} ${v.to}`);
+        toast(r.error ? r.error : names.length ? `${to}: updated ${names.join(", ")}` : `${to} is up to date`, !!r.error);
+      } else if (what === "restart" && to === HERE.name) { return showRestarting(); }
+      else toast(what === "make-active" ? `${to} takes over in a few seconds` : `${to} is restarting`);
+    } catch (err) { toast(err.message, true); }
+    setTimeout(renderServers, 1500);
+  });
+  box.querySelectorAll("[data-cl-edit]").forEach(b => b.onclick = () => { state.clEdit = state.clEdit === b.dataset.clEdit ? null : b.dataset.clEdit; renderServers(); });
+  box.querySelectorAll("[data-cl-save]").forEach(b => b.onclick = async () => {
+    const values = Object.fromEntries(["library_root", "podcast_root", "public_url", "ffmpeg_path"].map(k => [k, $(`#cl-${k}`).value.trim()]));
+    try { await api("/api/cluster/command", {to: b.dataset.clSave, kind: "settings", values}); toast(`Saved for ${b.dataset.clSave}`); state.clEdit = null; }
+    catch (err) { toast(err.message, true); }
+    renderServers();
+  });
+  $("#cl-leave").onclick = async () => {
+    if (!confirm(`Stop sharing on ${c.name}? It runs on its own again with its copy of everything; the other servers carry on without it.`)) return;
+    try { await api("/api/cluster/leave", {}); showRestarting(); } catch (err) { toast(err.message, true); }
+  };
+  if (!state.clEdit) state.serversTimer = setTimeout(() => { if (state.page === "settings") renderServers(); }, 5000);
+}
+
+// The music folder scan: what it found, and Scan now
+function renderScan(sc) {
+  const box = $("#scan-info");
+  if (!box || !sc) return;
+  clearTimeout(state.scanTimer);
+  box.innerHTML = sc.running
+    ? `<b>Scanning…</b> ${(sc.files || 0).toLocaleString()} music files so far.`
+    : `${sc.error ? `<span class="err-text">${h(sc.error)}</span>` : `${(sc.indexed || 0).toLocaleString()} music files${sc.finished ? `, scanned ${ago(sc.finished)}` : ""}${sc.found ? `; ${sc.found.toLocaleString()} song${sc.found === 1 ? "" : "s"} found there didn't need downloading` : ""}.`}
+       <button class="btn small" id="scan-now" style="margin-left:6px">Scan now</button>`;
+  $("#scan-now") && ($("#scan-now").onclick = async e => {
+    e.target.disabled = true;
+    try { await api("/api/library/scan", {}); } catch (err) { toast(err.message, true); }
+    setTimeout(async () => { await refreshStatus(); renderScan(state.status.scan); }, 800);
+  });
+  if (sc.running) state.scanTimer = setTimeout(async () => {
+    if (state.page !== "settings") return;
+    await refreshStatus(); renderScan(state.status.scan);
+  }, 2000);
+}
+
+// Name and icon: previews, saving, and rebuilding the phone app with them
+function brandPreviews(src, full) {
+  const icon = src ? `<img src="${h(src)}" alt="">` : NOTE;
+  return `<div class="bp dark">${icon}<span>${h($("#brand_name")?.value || BRAND.name)}</span></div><div class="bp light">${icon}</div>
+    <div class="bp phone ${full ? "full" : ""}" style="background:${h($("#brand_background")?.value || BRAND.background)}" title="On Android home screens">${icon}</div>`;
+}
+
+function brandForm(v, brand, collect) {
+  let picked = null;  // {data (base64), url}
+  const current = () => picked ? picked.url : brand.icon ? `/brand/icon-256.png?v=${brand.icon}` : null;
+  const draw = () => { $("#brand-previews").innerHTML = brandPreviews(current(), !picked && brand.icon && !brand.see_through); };
+  draw();
+  $("#brand_name").oninput = draw;
+  $("#brand_background").oninput = draw;
+  $("#brand_icon").onchange = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 20 * 1048576) return toast("That picture is too big (20 MB at most).", true);
+    try {
+      const blob = /svg/i.test(file.type) || /\.svg$/i.test(file.name) ? await svgToPng(file) : file;
+      picked = {data: await base64(blob), url: URL.createObjectURL(blob)};
+      draw();
+    } catch (err) { toast("That picture couldn't be read.", true); }
+  };
+  const save = async (body, button) => {
+    if (button) { button.disabled = true; button.textContent = "Saving…"; }
+    try {
+      applyBrand(await api("/api/branding", body));
+      toast("Saved. Phones show it the next time the app opens.");
+    } catch (err) { toast(err.message, true); }
+    renderSettings(v);
+  };
+  $("#brand-save").onclick = e => save({name: $("#brand_name").value, background: $("#brand_background").value,
+                                         ...(picked ? {icon: picked.data} : {})}, e.target);
+  $("#brand-reset") && ($("#brand-reset").onclick = e => save({reset_icon: true}, e.target));
+  renderAppBuild(brand.app, collect);
+}
+
+function renderAppBuild(a, collect) {
+  const box = $("#app-build");
+  if (!box || !a) return;
+  clearTimeout(state.buildTimer);
+  if (a.running) {
+    box.innerHTML = `<div class="banner info" style="margin:0"><b>Rebuilding the app…</b> ${h(a.step || "")}<div class="sub">Started ${ago(a.started)}.</div></div>`;
+    state.buildTimer = setTimeout(async () => {
+      if (state.page !== "settings") return;
+      try { renderAppBuild((await api("/api/branding")).app, collect); } catch {}
+    }, 3000);
+    return;
+  }
+  const result = a.ok === true ? `<div class="banner info">${h(a.message)}</div>`
+    : a.ok === false ? `<div class="banner err">${h(a.message)}${a.log ? `<pre class="log">${h(a.log)}</pre>` : ""}</div>` : "";
+  box.innerHTML = `${result}
+    <p class="help">${a.needed ? "<b>Phones' home screens still show the app's old name and icon.</b>" : "Phones' home screens already match (once they've installed the latest update)."}</p>
+    ${a.problems.length ? `<div class="banner warn">This PC can't rebuild the app yet:<ul style="margin:6px 0 0 18px;padding:0">${a.problems.map(x => `<li>${h(x)}</li>`).join("")}</ul></div>` : ""}
+    <button class="btn ${a.needed && a.ready ? "primary" : ""}" id="app-rebuild" ${a.ready || a.problems.length ? "" : "disabled"}>Rebuild the app and offer it to phones</button>`;
+  $("#app-rebuild").onclick = async e => {
+    e.target.disabled = true;
+    try {
+      await api("/api/settings", collect());  // the build settings, if they were just typed in
+      renderAppBuild((await api("/api/branding/rebuild-app", {})).app, collect);
+    } catch (err) { toast(err.message, true); e.target.disabled = false; }
+  };
+}
+
+const base64 = blob => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(",")[1]);
+  r.onerror = reject;
+  r.readAsDataURL(blob);
+});
+
+async function svgToPng(file) {  // the server reads pictures, not drawings: draw it big first
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
+    const w = img.naturalWidth || 1024, ht = img.naturalHeight || 1024, k = 1024 / Math.max(w, ht);
+    const c = document.createElement("canvas");
+    c.width = Math.round(w * k); c.height = Math.round(ht * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise(resolve => c.toBlob(resolve, "image/png"));
+  } finally { URL.revokeObjectURL(url); }
+}
+
+async function renderYouTubeSignIn() {
+  const box = $("#yt-signin");
+  if (!box) return;
+  let y;
+  try { y = await api("/api/youtube"); } catch (e) { box.innerHTML = `<span class="err-text">${h(e.message)}</span>`; return; }
+  if (y.window_open) {
+    box.innerHTML = `<div class="banner info" style="margin:0">A Chrome window is open on YouTube Music. ${y.signed_in ? "<b>You're signed in there.</b> Click Done." : "Sign in there (complete any check YouTube shows), then click Done."}
+      <div style="margin-top:8px"><button class="btn small primary" id="yt-done">Done</button> <button class="btn small" id="yt-cancel">Cancel</button></div></div>`;
+    $("#yt-done").onclick = async () => {
+      try { await api("/api/youtube/finish", {}); toast("Signed in to YouTube. Downloads continue."); await refreshStatus(); }
+      catch (e) { toast(e.message, true); }
+      renderYouTubeSignIn();
+    };
+    $("#yt-cancel").onclick = async () => { await api("/api/youtube/cancel", {}).catch(() => {}); renderYouTubeSignIn(); };
+    clearTimeout(state.ytTimer);
+    if (state.page === "settings") state.ytTimer = setTimeout(renderYouTubeSignIn, 3000);
+  } else {
+    box.innerHTML = `${y.saved && y.in_use ? `<div class="sub" style="margin-bottom:8px"><span class="dot ok" style="display:inline-block"></span> Signed in, saved ${ago(y.saved_at)}.</div>` : ""}
+      <button class="btn ${y.saved && y.in_use ? "" : "primary"}" id="yt-open">${y.saved && y.in_use ? "Sign in again" : "Sign in to YouTube"}</button>`;
+    $("#yt-open").onclick = async () => { try { await api("/api/youtube/open", {}); } catch (e) { return toast(e.message, true); } renderYouTubeSignIn(); };
+  }
+}
+
+refreshStatus().then(route);
+</script>
+</body>
+</html>

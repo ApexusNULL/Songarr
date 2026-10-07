@@ -1,0 +1,8 @@
+# Copy this file to key.properties (same folder) and fill it in to sign release builds with
+# your own key. key.properties and the .jks file are ignored by git: never commit them.
+# Without key.properties, release builds are signed with Flutter's debug key (fine for trying
+# the app; but phones only accept updates signed with the same key as the installed app).
+storePassword=your-keystore-password
+keyPassword=your-key-password
+keyAlias=songarr
+storeFile=../songarr-release.jks

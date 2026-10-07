@@ -1,0 +1,6 @@
+yt-dlp[default]
+mutagen
+ytmusicapi
+websockets
+segno
+pillow

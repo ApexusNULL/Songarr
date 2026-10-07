@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The playback notification looks its icon up by name at run time, so tell the release
+     build's resource shrinker not to remove it. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_songarr" />

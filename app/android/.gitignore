@@ -1,0 +1,20 @@
+gradle-wrapper.jar
+/.gradle
+/captures/
+/gradlew
+/gradlew.bat
+/local.properties
+GeneratedPluginRegistrant.java
+.cxx/
+
+# Remember to never publicly share your keystore.
+# See https://flutter.dev/to/reference-keystore
+key.properties
+**/*.keystore
+**/*.jks
+
+# Your Firebase config (optional; enables Jam invite notifications)
+app/google-services.json
+
+# Name and icon chosen on the server (Settings → Name and icon), written when it rebuilds the app
+/app/src/release/
