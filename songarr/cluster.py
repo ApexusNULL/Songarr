@@ -764,15 +764,17 @@ class Cluster:
                     except Exception as e:  # report it to whoever asked
                         log.exception("command from %s", cmd.get("from"))
                         result = {"status": 500, "error": str(e)}
+                    after = result.pop("_then", None) if isinstance(result, dict) else None  # (not part of the answer)
                     try:
                         _write_json(self.results_dir / f"{cmd['id']}.json", result)
                     finally:
                         claimed.unlink(missing_ok=True)
-                    after = result.pop("_then", None) if isinstance(result, dict) else None
                     if after:
                         after()
             except OSError:
                 pass  # the NAS is away: the heartbeat loop reports it
+            except Exception:  # one request gone wrong mustn't end this loop: no others would be carried out
+                log.exception("carrying out a request from another server")
             finally:
                 if self.svc:
                     self.svc.db.release()

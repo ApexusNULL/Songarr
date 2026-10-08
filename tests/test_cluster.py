@@ -623,6 +623,16 @@ class OneAdminPageTests(unittest.TestCase):
         status, r = self.admin(self.pc, "POST", "/api/cluster/command", {"to": "box", "kind": "make-active"})
         self.assertEqual((status, json.loads((self.shared / "handover.json").read_text())["to"]), (200, "box"))
 
+    def test_restarting_another_server(self):
+        restarted = threading.Event()
+        self.box.svc.restart_hook = restarted.set
+        status, r = self.admin(self.pc, "POST", "/api/cluster/command", {"to": "box", "kind": "restart"})
+        self.assertEqual((status, r.get("ok")), (200, True), r)
+        self.assertTrue(restarted.wait(5))
+        # and it still carries out what's asked of it afterwards
+        status, r = self.admin(self.pc, "POST", "/api/cluster/command", {"to": "box", "kind": "make-active"})
+        self.assertEqual(status, 200, r)
+
     def test_the_apps_are_pointed_at_the_active_server(self):
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{self.app_port}/api/v1/me", timeout=10)
