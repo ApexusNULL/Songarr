@@ -326,6 +326,15 @@ class SongarrApi {
       CatalogAlbumPage(await _send('POST', '/requests/album', {'source': source, 'id': id}));
 
   /// Ask the server to download a song; [like] also saves it to Liked Songs.
+  /// The YouTube uploads found for a song (with [search], YouTube is searched again first).
+  Future<SongVersions> songVersions(String trackId, {bool search = false}) async =>
+      SongVersions(await _call((dio) => dio.get('/tracks/$trackId/versions',
+          queryParameters: {if (search) 'search': '1'}, options: Options(receiveTimeout: const Duration(seconds: 90)))) as Map<String, dynamic>);
+
+  /// Download another version of a song (a YouTube link or id) in place of the one it has, for everyone.
+  Future<Track> replaceSong(String trackId, String youtube) async =>
+      Track.fromJson(await _send('POST', '/tracks/$trackId/replace', {'youtube': youtube}));
+
   Future<Track> request(CatalogItem item, {bool like = false}) async =>
       Track.fromJson(await _send('POST', '/requests', {'source': item.source, 'id': item.json['id'], if (like) 'like': true}));
 

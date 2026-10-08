@@ -342,7 +342,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 MIGRATIONS = {
     "tracks": {"blocked": "INTEGER NOT NULL DEFAULT 0",
                "priority": "INTEGER NOT NULL DEFAULT 0",  # app requests jump the queue
-               "requested_at": "REAL"},  # when it was last requested: the newest request downloads first
+               "requested_at": "REAL",  # when it was last requested: the newest request downloads first
+               "previous_youtube_id": "TEXT"},  # while another version replaces it: the upload it had (service.replace)
     "devices": {"push_token": "TEXT"},  # Firebase registration token, for Jam invites
     "user_playlists": {"source_id": "TEXT",  # the Spotify playlist it was brought over from (before Exportify)
                        "source_name": "TEXT", "source_snapshot": "TEXT", "source_seen": "TEXT", "image_url": "TEXT"},

@@ -18,6 +18,7 @@ import 'jam_sheet.dart';
 import 'player_screen.dart';
 import 'podcast_screen.dart';
 import 'reorder_songs_screen.dart';
+import 'replace_song_screen.dart';
 import 'theme.dart';
 import 'tracklist_screen.dart';
 
@@ -450,6 +451,11 @@ Future<void> showTrackMenu(BuildContext context, WidgetRef ref, Track track,
                 Navigator.pop(sheet);
                 offline.download([track]);
               }),
+          if (!track.isEpisode && track.status == 'downloaded')
+            item(Icons.find_replace_rounded, 'Wrong version? Replace it', () {
+              Navigator.pop(sheet);
+              nav.push(MaterialPageRoute(builder: (_) => ReplaceSongScreen(track)));
+            }),
           if (track.isEpisode && track.podcastId != null)
             item(Icons.podcasts_rounded, 'Go to podcast', () {
               Navigator.pop(sheet);

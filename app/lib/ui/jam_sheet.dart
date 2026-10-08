@@ -100,7 +100,7 @@ class _JamSheetState extends ConsumerState<_JamSheet> {
                   const Text('Add family members on your server (People) to Jam with them.', style: TextStyle(color: muted)),
                 const SizedBox(height: 16),
                 if (jam == null)
-                  _Primary(
+                  GradientButton(
                     label: _picked.isEmpty ? 'Pick someone to invite' : 'Start the Jam',
                     onTap: _busy || _picked.isEmpty
                         ? null
@@ -109,7 +109,7 @@ class _JamSheetState extends ConsumerState<_JamSheet> {
                   )
                 else ...[
                   if (_picked.isNotEmpty)
-                    _Primary(label: 'Send invites', onTap: _busy ? null : () => _run(() => ctl.invite(_picked.toList()), 'Invites sent')),
+                    GradientButton(label: 'Send invites', onTap: _busy ? null : () => _run(() => ctl.invite(_picked.toList()), 'Invites sent')),
                   const SizedBox(height: 8),
                   Center(
                     child: TextButton.icon(
@@ -126,31 +126,6 @@ class _JamSheetState extends ConsumerState<_JamSheet> {
       ]),
     );
   }
-}
-
-class _Primary extends StatelessWidget {
-  const _Primary({required this.label, required this.onTap});
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) => Pressable(
-        onTap: onTap,
-        child: AnimatedOpacity(
-          opacity: onTap == null ? 0.5 : 1,
-          duration: const Duration(milliseconds: 200),
-          child: Container(
-            height: 52,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(26),
-              gradient: aurora,
-              boxShadow: [BoxShadow(color: accent2.withValues(alpha: 0.35), blurRadius: 18)],
-            ),
-            child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-          ),
-        ),
-      );
 }
 
 /// A round initial for someone in the family.
@@ -324,7 +299,7 @@ Future<void> showJamInvite(BuildContext context, WidgetRef ref, JamInvite invite
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _Primary(
+                    child: GradientButton(
                       label: 'Join',
                       onTap: () async {
                         Navigator.pop(sheet);

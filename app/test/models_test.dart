@@ -193,4 +193,22 @@ void main() {
     expect((a.tracks[2].discNumber, a.tracks[2].trackNumber), (2, 1));
     expect(CatalogAlbum({'id': 9, 'name': 'X', 'type': 'compile'}).typeLabel, 'Compilation');
   });
+
+  test('the versions of a song, to replace a wrong download', () {
+    final v = SongVersions({
+      'current': 'PvizEDA1Nkw',
+      'current_url': 'https://youtu.be/PvizEDA1Nkw',
+      'expected_s': 348.173,
+      'versions': [
+        {'youtube_id': 'PvizEDA1Nkw', 'title': 'Radio Ga Ga', 'channel': 'Queen at The Opera Original Cast - Topic', 'duration_s': 352,
+         'score': 0.6, 'official': true, 'current': true, 'url': 'https://youtu.be/PvizEDA1Nkw'},
+        {'youtube_id': 'g9L-hOwKcHQ', 'title': 'Radio Ga Ga', 'channel': 'Queen', 'duration_s': 349, 'score': 1.0, 'official': false,
+         'current': false, 'url': 'https://youtu.be/g9L-hOwKcHQ'},
+      ],
+    });
+    expect((v.current, v.expected?.inSeconds, v.versions.length), ('PvizEDA1Nkw', 348, 2));
+    final cast = v.versions.first, queen = v.versions.last;
+    expect((cast.channel, cast.current, cast.official), ('Queen at The Opera Original Cast', true, true)); // ' - Topic' dropped
+    expect((queen.youtubeId, queen.duration?.inSeconds, queen.current, queen.url), ('g9L-hOwKcHQ', 349, false, 'https://youtu.be/g9L-hOwKcHQ'));
+  });
 }

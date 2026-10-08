@@ -6,7 +6,9 @@ Signals, strongest first:
   artist     a Spotify artist appears in the uploader/artists/title
   official   YouTube Music "song" results and "Artist - Topic" channels are label uploads
 Version words (live, remix, sped up, 1 hour...) are penalised when they appear on one
-side only, so "Song (Live)" never replaces "Song" and vice versa.
+side only, so "Song (Live)" never replaces "Song" and vice versa. So are cover acts that carry the
+artist's name ("Queen at The Opera Original Cast", "The Beatles Tribute Band", "Vitamin String
+Quartet") unless the song's own artist is one.
 """
 
 from __future__ import annotations
@@ -52,6 +54,12 @@ VERSION_WORDS = [
 ]
 JUNK_WORDS = ["1 hour", "10 hours", "hour loop", "reaction", "tutorial", "lesson", "how to play", "drum cover", "guitar cover"]
 SOFT_WORDS = ["official video", "music video", "lyric video", "lyrics", "visualizer"]
+# In an uploader's or credited artist's name, words that mark a cover act rather than the artist.
+COVER_ACT_WORDS = [
+    "tribute", "cast", "orchestra", "symphony", "philharmonic", "string quartet", "quartet", "ensemble",
+    "karaoke", "players", "covers", "cover band", "in the style of", "made famous", "originally performed",
+    "lullaby", "lullabies", "rockabye", "8 bit", "piano tribute", "revival", "experience", "the sound of",
+]
 
 # "(feat. X)", "[with X]" anywhere, or a bare "feat. X" tail; a bare "with" is left alone ("Dance with Me").
 _FEAT = re.compile(r"\s*(?:[\(\[]\s*(?:feat\.?|ft\.?|featuring|with)\s+[^\)\]]*[\)\]]|\s(?:feat\.?|ft\.|featuring)\s+.*$)", re.I)
@@ -125,6 +133,14 @@ def score(track: TrackInfo, c: Candidate) -> Candidate:
     isrc_exact = c.source == "isrc" and d is not None and d <= 1.5
     if isrc_exact:
         reasons.append("ISRC + exact length")
+
+    # The artist only as part of a cover act's name ("Queen at The Opera Original Cast - Topic"): not the artist.
+    credited = norm(" | ".join([*c.artists, (c.channel or "").removesuffix(" - Topic")]))
+    sp_artists = norm(" ".join(track.artists))
+    cover_act = next((w for w in COVER_ACT_WORDS if _has(w, credited) and not _has(w, sp_artists)), None)
+    if cover_act and artist and not any(norm(a) and norm(a) in (norm(x) for x in c.artists) for a in track.artists):
+        artist = 0.0
+        reasons[-1] = f"artist ✗ (a cover act: {cover_act})"
 
     official = 1.0 if (c.channel or "").endswith(" - Topic") or (c.source in ("ytm", "isrc") and c.artists) else 0.0
     if official:

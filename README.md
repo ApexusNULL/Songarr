@@ -470,7 +470,7 @@ Register-ScheduledTask -TaskName "Songarr" -Action $a -Trigger (New-ScheduledTas
 | Wanted | Waiting for a download slot. App requests go first (newest first), then the backlog (newest like first). |
 | Searching / Downloading | In progress. |
 | Downloaded | In your library, tagged, with cover art. |
-| Needs review | No upload matched confidently. Pick one under **Wanted → Needs review** (each links to YouTube so you can listen first), or paste your own link. |
+| Needs review | No upload matched confidently. Pick one under **Wanted → Needs review** (each links to YouTube so you can listen first), or paste your own link. A song that downloaded as the wrong version can be replaced the same way, or from the app. |
 | Failed | Retried automatically after 1 h, 6 h, 1 day, then 3 days, or right away with **Retry**. |
 | Ignored | Never downloaded until you **Unignore** it. |
 | Not wanted | Nobody likes it, has it in a playlist or asked for it any more. Songarr stops tracking it, but the file is kept. |
@@ -507,6 +507,10 @@ deletes song files on its own: when someone unlikes a song, it only leaves *thei
   the newest request first.
 - **Podcasts** resume across devices. Downloads **expire**: per show choose **Off**, **Until
   played** or a number of days.
+- **Wrong version?** If a song downloaded as a cover, a live take or another band, open its menu (⋯)
+  and choose **Wrong version? Replace it**. It lists the YouTube uploads the server found, each with its
+  length against the song's and a link to check it on YouTube first; **Search YouTube again** finds
+  more, or paste a link. **Use this version** downloads it in place of the old one, for everyone.
 - **Now Playing:** tap the artist under the title to open their page (with several artists, pick one).
 - **Jams:** in Now Playing tap the **people** button (or **Start a Jam with this** on a song) and
   pick who to invite. Everyone hears the same moment; anyone can play, pause, skip or add songs.
@@ -756,6 +760,7 @@ music, and neither server can help with that.
 | A playlist didn't come over | Exportify only lists playlists in the person's Spotify library; ones they only follow may need **Follow** in Spotify first. |
 | The phone can't reach the server | Open your app address in a browser: a **404** means the tunnel works (check the address in **Settings → App access**); an error page means the tunnel isn't pointing at `localhost:8486`, or `cloudflared` isn't running (Windows Services → *Cloudflared agent*). |
 | The domain isn't working yet | New nameservers can take up to a day; Cloudflare shows the domain as **Active** when ready. |
+| A song is a cover or the wrong version | In the app: the song's menu (⋯) → **Wrong version? Replace it**, and pick the right upload (or paste a link). It downloads in place of the old file, for everyone. |
 | The app won't install an update | It was built with a different signing key. Keep using the same `key.properties` and `.jks`, or uninstall and reinstall. |
 | No media controls or notification | Allow notifications for Songarr in Android settings. |
 | No new-release notifications | They come with Jam notifications: set up [Firebase](#jam-notifications-firebase). Without it, new releases still show on Home and under the bell. |

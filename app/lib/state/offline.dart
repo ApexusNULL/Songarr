@@ -241,14 +241,24 @@ class OfflineStore extends Notifier<OfflineState> {
     }
   }
 
-  /// The local file to play for [t], if there is one (a download, or a fully cached stream).
+  /// The local file to play for [t], if there is one (a download, or a fully cached stream). A copy
+  /// of an older version (the song was replaced on the server since: its size changed) isn't used:
+  /// a cached one is dropped, a download is fetched again in the background.
   String? localFile(Track t) {
     final d = state.downloads[t.id];
     if (d != null) {
       final p = _downloadPath(d);
-      if (File(p).existsSync()) return p;
+      if (File(p).existsSync()) {
+        if (t.size == null || d.size == null || t.size == d.size) return p;
+        Future.microtask(() => _refresh(t));
+      }
     }
     final c = File(cachePath(t));
+    if (c.existsSync() && t.size != null && c.lengthSync() != t.size) {
+      try {
+        c.deleteSync();
+      } catch (_) {}
+    }
     if (c.existsSync()) {
       c.setLastModifiedSync(DateTime.now()); // tie-breaker for songs with equal listening scores
       return c.path;
@@ -289,6 +299,17 @@ class OfflineStore extends Notifier<OfflineState> {
     return todo.length;
   }
 
+  final _refreshing = <String>{};
+
+  /// A download of an older version of [t], replaced by the new one.
+  void _refresh(Track t) {
+    final api = ref.read(apiProvider);
+    if (api == null || !t.playable || state.progress.containsKey(t.id) || !_refreshing.add(t.id)) return;
+    state = state.copyWith(progress: {...state.progress, t.id: 0});
+    _queue.add(t);
+    _pump(api);
+  }
+
   void _pump(SongarrApi api) {
     while (_running < _parallel && _queue.isNotEmpty) {
       final t = _queue.removeAt(0);
@@ -305,7 +326,7 @@ class OfflineStore extends Notifier<OfflineState> {
     final partial = '$path.part';
     try {
       final cached = File(cachePath(t));
-      if (cached.existsSync()) {
+      if (cached.existsSync() && (t.size == null || cached.lengthSync() == t.size)) {
         await cached.copy(partial); // already streamed once: no need to fetch it again
       } else {
         await Dio().download(
@@ -326,6 +347,7 @@ class OfflineStore extends Notifier<OfflineState> {
         File(partial).deleteSync();
       } catch (_) {}
     } finally {
+      _refreshing.remove(t.id);
       state = state.copyWith(progress: {...state.progress}..remove(t.id));
     }
   }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import random
@@ -260,6 +261,12 @@ class Service:
                 self.active[tid].update(stage=stage, **kw)
 
     def _fail(self, t: dict, e: Exception) -> None:
+        if t.get("pinned") and t.get("file_path") and Path(t["file_path"]).is_file():
+            # Another version that won't download: the song keeps the file it had.
+            self.db.set_status(t["id"], "downloaded", pinned=0, youtube_id=t.get("previous_youtube_id") or t.get("youtube_id"),
+                               previous_youtube_id=None, error=None, attempts=0, next_attempt=None)
+            self.db.log("failed", f"{t['title']}: the version chosen didn't download ({str(e)[:200]}); it keeps the one it had", t["id"])
+            return
         attempts = (t.get("attempts") or 0) + 1
         delay = RETRY_DELAYS[attempts - 1] if attempts <= len(RETRY_DELAYS) else None
         self.db.set_status(t["id"], "failed", error=str(e)[:500], attempts=attempts,
@@ -300,18 +307,19 @@ class Service:
         fmt = s["audio_format"] if s["audio_format"] in FORMATS else "m4a"
         ext = FORMATS[fmt][1]
         dest = library.target_path(s["library_root"], t, ext)
+        picked = bool(t.get("pinned") and t.get("youtube_id"))  # a version chosen by hand: download it, whatever's on disk
 
-        if dest.exists() and tagging.read_spotify_id(dest) == tid:  # already on disk (e.g. DB was reset)
+        if not picked and dest.exists() and tagging.read_spotify_id(dest) == tid:  # already on disk (e.g. DB was reset)
             self.db.set_status(tid, "downloaded", file_path=str(dest), file_size=dest.stat().st_size, error=None)
             self.db.log("imported", f"Found existing file for {t['title']}", tid)
             self.playlists_dirty = True
             return
 
-        if self.scanner.take(t):  # already in the music folder, from anywhere
+        if not picked and self.scanner.take(t):  # already in the music folder, from anywhere
             self.playlists_dirty = True
             return
 
-        if self._reuse_same_recording(t, dest):
+        if not picked and self._reuse_same_recording(t, dest):
             return
 
         if not (t.get("title") or "").strip():
@@ -350,11 +358,13 @@ class Service:
             cover = tagging.fetch_cover(t.get("cover_url"))
             tagging.tag(path, t, cover, cand.id)
             self._stage(tid, "moving to library")
-            final = library.place(path, dest)
+            final = library.place(path, dest)  # (over the old file, when it's the same path)
             library.write_folder_cover(final.parent, cover)
+            if t.get("file_path") and Path(t["file_path"]) != final:
+                self._remove_replaced(Path(t["file_path"]), tid)
             self.db.set_status(tid, "downloaded", youtube_id=cand.id, match_score=cand.score, file_path=str(final),
                                file_size=final.stat().st_size, bitrate=ytinfo.get("abr"), error=None, attempts=0,
-                               next_attempt=None, blocked=0)
+                               next_attempt=None, blocked=0, previous_youtube_id=None)
             self.db.log("downloaded", f"{', '.join(t['artists'])} - {t['title']} ({_describe(cand)})", tid)
             self.playlists_dirty = True
             self._on_success()
@@ -457,9 +467,37 @@ class Service:
         return deleted
 
     def pick(self, tid: str, youtube_id: str) -> None:
-        self.db.set_status(tid, "wanted", youtube_id=youtube_id, pinned=1, error=None, attempts=0, next_attempt=None)
-        self.db.log("manual-pick", f"You chose https://youtu.be/{youtube_id}", tid)
+        self.replace(tid, youtube_id)
+
+    def replace(self, tid: str, youtube_id: str, user_id: int | None = None) -> None:
+        """Download this YouTube upload for the song (it got the wrong recording: a cover, a live
+        version...), ahead of everything else. The new file replaces the old one; if it won't download,
+        the old one stays. From the admin site (Pick) or the app (Replace), by anyone in the family."""
+        row = self.db.one("SELECT title, artists, status, youtube_id FROM tracks WHERE id = ?", (tid,))
+        if row is None:
+            raise ValueError("Unknown song.")
+        if tid in self.active:
+            raise RuntimeError("That song is being downloaded right now. Try again in a minute.")
+        previous = row["youtube_id"] if row["status"] == "downloaded" else None
+        self.db.run("UPDATE tracks SET monitored = 1, priority = MAX(priority, ?), requested_at = ? WHERE id = ?",
+                    (REQUEST_PRIORITY, time.time(), tid))
+        self.db.set_status(tid, "wanted", youtube_id=youtube_id, pinned=1, previous_youtube_id=previous, error=None,
+                           attempts=0, next_attempt=None, blocked=0)
+        who = self.db.one("SELECT name FROM users WHERE id = ?", (user_id,)) if user_id else None
+        song = f"{', '.join(json.loads(row['artists'] or '[]'))} - {row['title']}"
+        self.db.log("manual-pick", f"{who[0] if who else 'You'} chose another version of {song}: https://youtu.be/{youtube_id}", tid)
         self.wake.set()
+
+    def _remove_replaced(self, old: Path, tid: str) -> None:
+        """The file a new version replaced, when it was somewhere else: deleted if Songarr made it (for
+        this song) inside the music library. Anything else is left alone."""
+        try:
+            root = Path(self.db.setting("library_root") or "").resolve()
+            if old.is_file() and old.resolve().is_relative_to(root) and tagging.read_spotify_id(old) == tid:
+                old.unlink()
+                self.db.log("deleted", f"Removed the version it replaced ({old})", tid)
+        except OSError as e:
+            log.info("couldn't remove the replaced file %s: %s", old, e)
 
     def ignore(self, tid: str, ignored: bool) -> None:
         if ignored:

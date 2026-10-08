@@ -28,11 +28,10 @@ from .db import STATUSES, track_dict
 from .branding import BrandError
 from .cluster import NODE_LOCAL, ROLES, ClusterConfig, ClusterError, clean_name
 from .service import Service
-from .youtube import FORMATS, find_ffmpeg, find_js_runtime
+from .youtube import FORMATS, find_ffmpeg, find_js_runtime, youtube_id
 
 log = logging.getLogger(__name__)
 UI = Path(__file__).with_name("ui.html")
-_YT_ID = re.compile(r"(?:v=|youtu\.be/|/shorts/|/embed/|^)([A-Za-z0-9_-]{11})(?:[?&#/]|$)")
 
 SETTING_RULES: dict[str, Any] = {
     "library_root": lambda v: str(v).strip(),
@@ -110,11 +109,6 @@ def _public_url(v: Any) -> str:
     if v and not re.fullmatch(r"https://[A-Za-z0-9.-]+(:\d+)?(/[\w./-]*)?", v):
         raise ValueError("The app address must start with https:// (your Cloudflare Tunnel hostname).")
     return v
-
-
-def youtube_id(text: str) -> str | None:
-    m = _YT_ID.search(text.strip())
-    return m[1] if m else None
 
 
 def make_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:

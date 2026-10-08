@@ -361,3 +361,29 @@ class SectionTitle extends StatelessWidget {
         ]),
       );
 }
+
+/// The main button of a sheet or screen: a glowing aurora pill (dimmed while [onTap] is null).
+class GradientButton extends StatelessWidget {
+  const GradientButton({super.key, required this.label, required this.onTap});
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Pressable(
+        onTap: onTap,
+        child: AnimatedOpacity(
+          opacity: onTap == null ? 0.5 : 1,
+          duration: const Duration(milliseconds: 200),
+          child: Container(
+            height: 52,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(26),
+              gradient: aurora,
+              boxShadow: [BoxShadow(color: accent2.withValues(alpha: 0.35), blurRadius: 18)],
+            ),
+            child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          ),
+        ),
+      );
+}

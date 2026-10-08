@@ -31,6 +31,13 @@ from .matching import Candidate, TrackInfo, score
 log = logging.getLogger(__name__)
 
 VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
+_YT_ID = re.compile(r"(?:v=|youtu\.be/|/shorts/|/embed/|^)([A-Za-z0-9_-]{11})(?:[?&#/]|$)")
+
+
+def youtube_id(text: str) -> str | None:
+    """The video id in a YouTube link (watch, youtu.be, shorts, music.youtube.com...) or a bare id."""
+    m = _YT_ID.search(text.strip())
+    return m[1] if m else None
 
 FORMATS = {
     # m4a: YouTube's AAC as-is (itag 141 at 256k with a Premium cookie, else 140 at 128k)

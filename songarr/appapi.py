@@ -32,8 +32,9 @@ from .releases import FollowError
 from . import jams
 from .jams import Jam, JamError
 from .db import track_dict
-from .matching import norm
+from .matching import TrackInfo, norm
 from .service import Service
+from .youtube import youtube_id
 from .users import SignInError
 
 log = logging.getLogger(__name__)
@@ -257,6 +258,53 @@ class AppAPI:
         if not out:
             raise ApiError(404, "No such song.")
         return out[0]
+
+    # -- the wrong version downloaded: another one instead -------------------------------------------
+
+    def versions(self, user: dict, q: dict, body: dict, tid: str) -> dict:
+        """The YouTube uploads found for a song (best match first), the one it has, and how long it
+        should be. With ?search=1, YouTube is searched again first."""
+        row = self.db.one("SELECT * FROM tracks WHERE id = ?", (tid,))
+        if row is None:
+            raise ApiError(404, "No such song.")
+        if q.get("search") == "1":
+            self._search_again(row)
+        current = row["youtube_id"] if row["status"] == "downloaded" or row["pinned"] else None
+        versions = [{"youtube_id": r["youtube_id"], "title": r["title"], "channel": r["channel"], "duration_s": r["duration"],
+                     "score": r["score"], "official": (r["channel"] or "").endswith(" - Topic") or r["source"] in ("ytm", "isrc"),
+                     "current": r["youtube_id"] == current, "url": f"https://youtu.be/{r['youtube_id']}"}
+                    for r in self.db.q("SELECT * FROM candidates WHERE track_id = ? ORDER BY score DESC LIMIT 15", (tid,))]
+        return {"track": self.tracks_by_ids([tid], user["id"])[0], "current": current,
+                "current_url": f"https://youtu.be/{current}" if current else None,
+                "expected_s": (row["duration_ms"] or 0) / 1000 or None, "versions": versions}
+
+    def _search_again(self, row) -> None:
+        if self.svc.cooldown_until > time.time():
+            raise ApiError(503, "YouTube asked the server to slow down. Try searching again in a while.")
+        t = track_dict(row)
+        yt = self.svc.youtube_factory(self.db.settings())
+        yt.pace = lambda kind: self.svc.pacer.wait(kind)
+        info = TrackInfo(t["title"], t["artists"], t.get("album"), (t.get("duration_ms") or 0) / 1000 or None, t.get("isrc"))
+        try:
+            _, ranked = yt.find(info, float(self.db.setting("match_threshold") or 0.7))
+        except Exception as e:  # noqa: BLE001 (YouTube errors come in many shapes)
+            log.info("searching YouTube again for %s failed: %s", t["id"], e)
+            raise ApiError(502, "YouTube search isn't working right now. Try again in a minute.") from None
+        if ranked:
+            self.db.save_candidates(t["id"], ranked)
+
+    def replace(self, user: dict, q: dict, body: dict, tid: str) -> dict:
+        """Download another version of this song (one from versions, or any YouTube link), for everyone."""
+        vid = youtube_id(str(body.get("youtube") or ""))
+        if not vid:
+            raise ApiError(400, "That doesn't look like a YouTube link.")
+        try:
+            self.svc.replace(tid, vid, user["id"])
+        except ValueError:
+            raise ApiError(404, "No such song.") from None
+        except RuntimeError as e:
+            raise ApiError(409, str(e)) from None
+        return self.tracks_by_ids([tid], user["id"])[0]
 
     def album(self, user: dict, q: dict, body: dict, album_id: str) -> dict:
         rows = self.db.q("SELECT * FROM tracks WHERE album_id = ? ORDER BY disc_number, track_number", (album_id,))
@@ -974,6 +1022,8 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
     route("GET", "/home", api.home)
     route("GET", "/search", api.search)
     route("GET", r"/tracks/([A-Za-z0-9]+)", api.track)
+    route("GET", r"/tracks/([A-Za-z0-9]+)/versions", api.versions)
+    route("POST", r"/tracks/([A-Za-z0-9]+)/replace", api.replace)
     route("GET", r"/albums/([A-Za-z0-9]+)", api.album)
     route("GET", "/artist", api.artist)
     route("GET", "/artist/about", api.artist_about)

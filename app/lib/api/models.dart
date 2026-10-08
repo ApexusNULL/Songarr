@@ -641,3 +641,34 @@ class CatalogAlbumPage extends CatalogAlbum {
 }
 
 String formatAlbumLength(Duration d) => d.inHours > 0 ? '${d.inHours} h ${d.inMinutes % 60} min' : '${d.inMinutes} min';
+
+/// One YouTube upload of a song (GET /tracks/{id}/versions), to replace a wrong download with.
+class SongVersion {
+  SongVersion(this.json);
+  final Map<String, dynamic> json;
+  String get youtubeId => json['youtube_id'] as String;
+  String get title => json['title'] as String? ?? '';
+  /// Who uploaded it ("Artist - Topic" channels are the label's own audio).
+  String get channel => (json['channel'] as String? ?? '').replaceAll(RegExp(r' - Topic$'), '');
+  Duration? get duration =>
+      json['duration_s'] == null ? null : Duration(milliseconds: ((json['duration_s'] as num) * 1000).round());
+  double get score => (json['score'] as num?)?.toDouble() ?? 0;
+  bool get official => json['official'] == true;
+  /// The one the song has now.
+  bool get current => json['current'] == true;
+  String get url => json['url'] as String? ?? 'https://youtu.be/$youtubeId';
+}
+
+class SongVersions {
+  SongVersions(Map<String, dynamic> j)
+      : current = j['current'] as String?,
+        currentUrl = j['current_url'] as String?,
+        expected = j['expected_s'] == null ? null : Duration(milliseconds: ((j['expected_s'] as num) * 1000).round()),
+        versions = [for (final v in j['versions'] as List) SongVersion(v as Map<String, dynamic>)];
+  final String? current;
+  final String? currentUrl;
+  /// How long the song should be.
+  final Duration? expected;
+  /// Best match first.
+  final List<SongVersion> versions;
+}
