@@ -68,7 +68,7 @@ class _ReplaceSongScreenState extends ConsumerState<ReplaceSongScreen> {
       builder: (d) => AlertDialog(
         title: const Text('Replace this song?'),
         content: Text('"${widget.track.title}" is downloaded again from the version you picked, for everyone on the server. '
-            'It takes a minute or so; until then it shows as downloading.'),
+            'It takes a minute or so; until then it plays the version it has.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Replace')),
@@ -127,6 +127,12 @@ class _ReplaceSongScreenState extends ConsumerState<ReplaceSongScreen> {
               leading: const Icon(Icons.music_note_rounded),
               title: Text(v.currentUrl ?? 'Not downloaded yet'),
               trailing: v.currentUrl == null ? null : _CopyLink(v.currentUrl!),
+            ),
+          if (v.replacing != null)
+            Text(
+              'Being replaced with ${v.versions.where((x) => x.youtubeId == v.replacing).firstOrNull?.title ?? 'the version picked'}: '
+              'it plays this one until that\'s downloaded.',
+              style: const TextStyle(color: muted, height: 1.35),
             ),
           Row(children: [
             const Expanded(child: _Heading('Other versions')),

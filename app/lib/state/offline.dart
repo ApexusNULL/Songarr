@@ -243,7 +243,8 @@ class OfflineStore extends Notifier<OfflineState> {
 
   /// The local file to play for [t], if there is one (a download, or a fully cached stream). A copy
   /// of an older version (the song was replaced on the server since: its size changed) isn't used:
-  /// a cached one is dropped, a download is fetched again in the background.
+  /// a cached one is dropped, a download is fetched again in the background (and still played while
+  /// the new one can't be fetched, offline say: the old version beats nothing).
   String? localFile(Track t) {
     final d = state.downloads[t.id];
     if (d != null) {
@@ -251,6 +252,7 @@ class OfflineStore extends Notifier<OfflineState> {
       if (File(p).existsSync()) {
         if (t.size == null || d.size == null || t.size == d.size) return p;
         Future.microtask(() => _refresh(t));
+        if (_refreshFailed.contains(t.id)) return p;
       }
     }
     final c = File(cachePath(t));
@@ -300,6 +302,16 @@ class OfflineStore extends Notifier<OfflineState> {
   }
 
   final _refreshing = <String>{};
+  final _refreshFailed = <String>{};
+
+  /// Downloads of songs replaced on the server since (from a list just loaded): fetch the new versions
+  /// now, while there's a connection, rather than when they're next played.
+  void refreshStale(List<Track> tracks) {
+    for (final t in tracks) {
+      final d = state.downloads[t.id];
+      if (d != null && t.size != null && d.size != null && t.size != d.size) _refresh(t);
+    }
+  }
 
   /// A download of an older version of [t], replaced by the new one.
   void _refresh(Track t) {
@@ -342,7 +354,9 @@ class OfflineStore extends Notifier<OfflineState> {
       final size = File(path).lengthSync();
       state = state.copyWith(downloads: {...state.downloads, t.id: Track({...t.json, 'size': size})});
       _saveIndex();
+      _refreshFailed.remove(t.id);
     } catch (_) {
+      if (_refreshing.contains(t.id)) _refreshFailed.add(t.id);
       try {
         File(partial).deleteSync();
       } catch (_) {}

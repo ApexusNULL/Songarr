@@ -319,7 +319,8 @@ The first time the app opens it asks to **show notifications**. Allow it: that's
 media controls and lock-screen player.
 
 **5. Later updates are automatic.** When you change the app, bump `version:` in
-`app/pubspec.yaml` (the number after `+` must go up), build, then publish it from the server:
+`app/pubspec.yaml` (the number after `+` must go up, past the build phones were last offered), build,
+then publish it from the server:
 
 ```powershell
 cd ..

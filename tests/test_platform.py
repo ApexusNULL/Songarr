@@ -526,6 +526,39 @@ class AppAPITests(unittest.TestCase):
         files = sorted(p.name for p in (self.svc.data_dir / "app-updates").iterdir())
         self.assertEqual(files, ["manifest.json", "songarr-1.2.0+7-x86_64.apk", "songarr-1.2.1+8-arm64-v8a.apk"])
         self.assertEqual(self.get("/api/v1/app/update?abi=arm64-v8a&build=7")[1]["update"]["build"], 8)
+        # publishing a build number phones were already offered says they won't take it
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            app_updates.main(["publish", "--data", str(self.svc.data_dir), "--app", str(app), "--abi", "arm64-v8a"])
+        self.assertIn("already offered build 8", err.getvalue())
+
+    def test_a_body_that_isnt_read_ends_the_connection(self):
+        import socket
+        inner = b"GET /api/v1/me HTTP/1.1\r\nHost: x\r\n\r\n"  # must never be taken for a request of its own
+        for length in (str(70 * 1024), "-1", "lots"):
+            with socket.create_connection(("127.0.0.1", self.port), timeout=5) as s:
+                s.sendall(b"POST /api/v1/auth/login HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                          b"Content-Length: " + length.encode() + b"\r\n\r\n" + inner)
+                got = b""
+                try:
+                    while chunk := s.recv(65536):
+                        got += chunk
+                except ConnectionResetError:
+                    pass  # (closed with the unread bytes still there)
+                except socket.timeout:
+                    self.fail(f"Content-Length {length}: the connection was left open")
+            self.assertLessEqual(got.count(b"HTTP/1."), 1, length)
+            self.assertNotIn(b" 401 ", got, length)
+
+    def test_background_polls_dont_count_as_someone_listening(self):
+        self.svc.last_app_request = 0.0
+        self.call(self.token, "GET", "/api/v1/jams/current")
+        self.call(self.token, "GET", "/api/v1/app/update?abi=arm64-v8a&build=1")
+        self.assertEqual(self.svc.last_app_request, 0.0)
+        self.call(self.token, "GET", "/api/v1/me")
+        self.assertGreater(self.svc.last_app_request, 0.0)
 
     def test_bad_requests(self):
         self.assertEqual(self.call(self.token, "POST", "/api/v1/requests", {"source": "nope"})[0], 400)

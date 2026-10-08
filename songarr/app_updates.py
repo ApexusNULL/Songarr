@@ -69,9 +69,12 @@ def pubspec_version(app_dir: Path) -> tuple[str, int]:
     return m[1], int(m[2])
 
 
-def publish(data_dir: Path, app_dir: Path, notes: str = "", abis: tuple[str, ...] = ABIS) -> dict:
-    """Copy freshly built APKs into the update folder. Returns the new manifest."""
-    version, build = pubspec_version(app_dir)
+def publish(data_dir: Path, app_dir: Path, notes: str = "", abis: tuple[str, ...] = ABIS,
+            version: str | None = None, build: int | None = None) -> dict:
+    """Copy freshly built APKs into the update folder. Returns the new manifest. [version] and [build]:
+    what they were built as (`flutter build --build-name --build-number`), if not pubspec.yaml's."""
+    if version is None or build is None:
+        version, build = pubspec_version(app_dir)
     out = Path(data_dir) / "app-updates"
     out.mkdir(parents=True, exist_ok=True)
     built = app_dir / "build" / "app" / "outputs" / "flutter-apk"
@@ -112,6 +115,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--data", type=Path, default=DEFAULT_DATA)
     p.add_argument("--app", type=Path, default=PROGRAM_DIR / "app")
     args = ap.parse_args(argv)
+    _, build = pubspec_version(args.app)
+    offered = AppUpdates(args.data).manifest().get("files", {})
+    newest = max((e.get("build", 0) for abi, e in offered.items() if abi in (args.abi or ABIS)), default=0)
+    if build <= newest:  # (an app rebuilt on the server for a new name or icon counts on from there)
+        print(f"Note: phones were already offered build {newest}, so they won't install build {build}. To offer "
+              f"this one, raise the number after '+' in app/pubspec.yaml past {newest}, build again and publish.",
+              file=sys.stderr)
     manifest = publish(args.data, args.app, args.notes, tuple(args.abi or ABIS))
     for abi, e in sorted(manifest["files"].items()):
         print(f"{abi:12} {e['version']}+{e['build']}  {e['size'] / 1e6:.1f} MB  {e['file']}")

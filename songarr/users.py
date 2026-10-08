@@ -30,6 +30,8 @@ def _h(secret: str) -> str:
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2**14, 8, 1  # ~16 MB and ~50 ms per check
 MIN_PASSWORD = 8
 LOGIN_TRIES = 5  # wrong passwords for one name per 10 minutes, then it waits
+MAX_CHECKS = 4  # password checks at once: a burst of sign-ins waits its turn instead of using up the memory
+_checking = threading.BoundedSemaphore(MAX_CHECKS)
 _dummy_hash: str | None = None
 
 
@@ -151,31 +153,48 @@ class Users:
         return {"name": row["name"], "login": row["login"], "has_password": bool(row["password_hash"])}
 
     def _name_tries(self, key: str) -> int:
+        with self._lock:
+            return self._name_count(key, time.time())
+
+    def _name_count(self, key: str, now: float) -> int:
+        """Wrong passwords for [key] in the last 10 minutes (with the lock held)."""
+        hits = [t for t in self._name_failures.get(key, []) if now - t < 600]
+        self._name_failures[key] = hits
+        return len(hits)
+
+    def _start_try(self, key: str, ip: str, by_address: bool = True) -> float:
+        """Count a password try as wrong before it's checked, so tries sent all at once can't all get
+        past the limits while the slow checks run; _right_try takes it back. Returns its time."""
         now = time.time()
         with self._lock:
-            hits = [t for t in self._name_failures.get(key, []) if now - t < 600]
-            self._name_failures[key] = hits
-            return len(hits)
+            if (by_address and self._address_blocked(ip, now)) or self._name_count(key, now) >= LOGIN_TRIES:
+                raise SignInError("Too many wrong tries. Wait 10 minutes, then try again.", 429)
+            self._name_failures.setdefault(key, []).append(now)
+            self._failures.setdefault(ip, []).append(now)
+        return now
 
-    def _wrong_password(self, key: str, ip: str) -> None:
+    def _right_try(self, key: str, ip: str, at: float) -> None:
         with self._lock:
-            self._name_failures.setdefault(key, []).append(time.time())
-        self._fail(ip)
+            self._name_failures.pop(key, None)
+            hits = self._failures.get(ip, [])
+            if at in hits:
+                hits.remove(at)
+
+    @staticmethod
+    def _check(password: str, stored: str | None) -> bool:
+        with _checking:
+            return check_password(password[:200], stored or _dummy())  # unknown names take as long as known ones
 
     def sign_in(self, login: str, password: str, device_name: str, ip: str) -> tuple[str, int]:
         """Trade a sign-in name and password for (device token, user id)."""
         login = _clean_login(login)
         key = login.lower()
-        if self._throttled(ip) or self._name_tries(key) >= LOGIN_TRIES:
-            raise SignInError("Too many wrong tries. Wait 10 minutes, then try again.", 429)
+        at = self._start_try(key, ip)
         row = self.db.one("SELECT id, password_hash FROM users WHERE login = ? COLLATE NOCASE", (login,)) if login else None
         stored = row["password_hash"] if row is not None and row["password_hash"] else None
-        ok = check_password(password[:200], stored or _dummy())  # unknown names take as long as known ones
-        if not (stored and ok):
-            self._wrong_password(key, ip)
-            raise SignInError("That name or password isn't right.")
-        with self._lock:
-            self._name_failures.pop(key, None)
+        if not (self._check(password, stored) and stored):
+            raise SignInError("That name or password isn't right.")  # (counted already)
+        self._right_try(key, ip, at)
         return self._new_device(row["id"], device_name, ip), row["id"]
 
     def change_password(self, user_id: int, login: str, current: str, new: str, ip: str) -> None:
@@ -183,11 +202,10 @@ class Users:
         stored = self.db.one("SELECT password_hash FROM users WHERE id = ?", (user_id,))["password_hash"]
         if stored:
             key = f"#{user_id}"
-            if self._name_tries(key) >= LOGIN_TRIES:
-                raise SignInError("Too many wrong tries. Wait 10 minutes, then try again.", 429)
-            if not check_password(current[:200], stored):
-                self._wrong_password(key, ip)
+            at = self._start_try(key, ip, by_address=False)
+            if not self._check(current, stored):
                 raise SignInError("Your current password isn't right.", 403)
+            self._right_try(key, ip, at)
         self.set_password(user_id, login, new)
 
     # -- pairing and devices ----------------------------------------------------
@@ -201,12 +219,15 @@ class Users:
         return code, expires
 
     def _throttled(self, ip: str) -> bool:
-        now = time.time()
         with self._lock:
-            hits = [t for t in self._failures.get(ip, []) if now - t < 600]
-            total = sum(len([t for t in v if now - t < 600]) for v in self._failures.values())
-            self._failures[ip] = hits
-            return len(hits) >= 10 or total >= 50
+            return self._address_blocked(ip, time.time())
+
+    def _address_blocked(self, ip: str, now: float) -> bool:
+        """Too many wrong tries from [ip], or from everywhere together (with the lock held)."""
+        hits = [t for t in self._failures.get(ip, []) if now - t < 600]
+        total = sum(len([t for t in v if now - t < 600]) for v in self._failures.values())
+        self._failures[ip] = hits
+        return len(hits) >= 10 or total >= 50
 
     def _fail(self, ip: str) -> None:
         with self._lock:

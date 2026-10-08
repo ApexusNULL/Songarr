@@ -637,3 +637,12 @@ def track_dict(row: sqlite3.Row) -> dict:
     d["artists"] = json.loads(d["artists"] or "[]")
     d["album_artists"] = json.loads(d["album_artists"] or "[]")
     return d
+
+
+REPLACING = ("wanted", "searching", "downloading")  # another version on its way (Service.replace)
+
+
+def has_file(t) -> bool:
+    """The song can be played: it's downloaded, or another version of it is on its way (Replace)
+    and the file it had plays until then."""
+    return t["status"] == "downloaded" or bool(t["pinned"] and t["file_path"] and t["status"] in REPLACING)

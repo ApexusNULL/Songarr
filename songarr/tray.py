@@ -65,12 +65,14 @@ def status_line(svc: Service) -> str:
 
 
 class Tray:
-    def __init__(self, svc: Service, url: str, log_dir: Path, stop: Callable[[], None], restart: Callable[[], None]):
+    def __init__(self, svc: Service, url: str, log_dir: Path, stop: Callable[[], None], restart: Callable[[], None],
+                 session_end: Callable[[], None] | None = None):
         self.svc = svc
         self.url = url
         self.log_dir = log_dir
         self.stop_songarr = stop
         self.restart_songarr = restart
+        self.session_end = session_end
         self.checking = False
         self.asking = False  # a "Stop Songarr?" question is open
         self._win: _Win | None = None
@@ -162,6 +164,12 @@ class Tray:
         else:
             versions = self.svc.dependencies.installed_versions()
             self.notify("Everything is up to date", f"yt-dlp {versions.get('yt-dlp', '?')}")
+
+    def session_ending(self) -> None:
+        """Windows is shutting down, restarting (an update, say) or signing out: stop properly first, so a
+        backup server takes over with everything."""
+        if self.session_end:
+            self.session_end()
 
     def tip(self) -> str:
         try:
@@ -257,8 +265,11 @@ if sys.platform == "win32":
     MessageBoxW = _sig(_user32, "MessageBoxW", ctypes.c_int, w.HWND, w.LPCWSTR, w.LPCWSTR, w.UINT)
     Shell_NotifyIconW = _sig(_shell32, "Shell_NotifyIconW", w.BOOL, w.DWORD, ctypes.POINTER(NOTIFYICONDATAW))
     GetModuleHandleW = _sig(_kernel32, "GetModuleHandleW", w.HMODULE, w.LPCWSTR)
+    ShutdownBlockReasonCreate = _sig(_user32, "ShutdownBlockReasonCreate", w.BOOL, w.HWND, w.LPCWSTR)
+    ShutdownBlockReasonDestroy = _sig(_user32, "ShutdownBlockReasonDestroy", w.BOOL, w.HWND)
 
     WM_CLOSE, WM_DESTROY, WM_TIMER, WM_NULL, WM_CONTEXTMENU = 0x0010, 0x0002, 0x0113, 0x0000, 0x007B
+    WM_QUERYENDSESSION, WM_ENDSESSION = 0x0011, 0x0016
     WM_TRAY, WM_NOTE, WM_BRAND = 0x8001, 0x8002, 0x8003  # WM_APP + n: clicks, a notification, a new name or icon
     NIN_SELECT, NIN_KEYSELECT = 0x0400, 0x0401
     NIM_ADD, NIM_MODIFY, NIM_DELETE, NIM_SETVERSION = 0, 1, 2, 4
@@ -441,6 +452,16 @@ if sys.platform == "win32":
                     return 0
                 if msg == self.taskbar_created:
                     self._add()
+                    return 0
+                if msg == WM_QUERYENDSESSION:
+                    return 1  # Windows is shutting down or signing out: fine (WM_ENDSESSION follows)
+                if msg == WM_ENDSESSION:
+                    if wparam:  # it really is: stop properly before Windows ends the program
+                        ShutdownBlockReasonCreate(hwnd, f"Stopping {self.tray.svc.branding.name()} properly…")
+                        try:
+                            self.tray.session_ending()
+                        finally:
+                            ShutdownBlockReasonDestroy(hwnd)
                     return 0
                 if msg == WM_CLOSE:
                     Shell_NotifyIconW(NIM_DELETE, ctypes.byref(self._data(0)))

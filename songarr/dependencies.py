@@ -134,13 +134,23 @@ class Dependencies:
         self.imports_ok: Callable[[list[str]], tuple[bool, str]] = imports_ok
         self.installed_versions: Callable[[], dict[str, str]] = installed_versions
         self.selfupdate = SelfUpdate()
+        self._checking = threading.Lock()  # one check at a time: the loop, "Check now", the tray, another server
 
     def info(self) -> dict:
         return ({"enabled": bool(self.db.setting("auto_update")), "installed": self.installed_versions()} | self.state
                 | {"songarr": self.selfupdate.info()})
 
     def check(self, install: bool = True) -> dict:
-        """Look for new releases and (if [install]) install them. Returns what was found and done."""
+        """Look for new releases and (if [install]) install them. Returns what was found and done. While
+        another check runs (two pip installs at once would undo each other), this one only says so."""
+        if not self._checking.acquire(blocking=False):
+            return {"found": {}, "error": "Already checking for updates; try again in a minute."}
+        try:
+            return self._check(install)
+        finally:
+            self._checking.release()
+
+    def _check(self, install: bool) -> dict:
         found: dict[str, tuple[str, str]] = {}
         failed = set(self.db.setting("update_failed") or [])
         errors = []

@@ -31,7 +31,7 @@ from . import __version__, app_updates, discover, download_page, podcasts
 from .releases import FollowError
 from . import jams
 from .jams import Jam, JamError
-from .db import track_dict
+from .db import has_file, track_dict
 from .matching import TrackInfo, norm
 from .service import Service
 from .youtube import youtube_id
@@ -43,6 +43,9 @@ MIME = {".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".opus": "audio/ogg", ".ogg":
         ".aac": "audio/aac", ".wav": "audio/wav", ".mp4": "video/mp4", ".mov": "video/quicktime",
         ".apk": "application/vnd.android.package-archive", ".png": "image/png", ".webp": "image/webp"}
 MAX_BODY = 64 * 1024
+# what the apps ask by themselves in the background (Jam invites every 20 s...): not someone using
+# Songarr, so they don't hold back an update's restart (Service.last_app_request)
+BACKGROUND = {"/api/v1/jams/current", "/api/v1/app/update", "/api/v1/podcasts/downloads"}
 CHUNK = 64 * 1024
 
 
@@ -93,7 +96,8 @@ class AppAPI:
             "album_artists": t["album_artists"], "release_date": t["release_date"], "track_number": t["track_number"],
             "disc_number": t["disc_number"], "duration_ms": t["duration_ms"], "explicit": bool(t["explicit"]),
             "cover_url": t["cover_url"], "thumb_url": t["thumb_url"], "isrc": t["isrc"],
-            "status": t["status"], "playable": t["status"] == "downloaded",
+            # (while another version is on its way, the song plays the file it has)
+            "status": "downloaded" if has_file(t) else t["status"], "playable": has_file(t),
             "format": Path(t["file_path"]).suffix.lstrip(".") if t["file_path"] else None,
             "bitrate": t["bitrate"], "size": t["file_size"], "liked": t["id"] in liked,
         }
@@ -269,14 +273,16 @@ class AppAPI:
             raise ApiError(404, "No such song.")
         if q.get("search") == "1":
             self._search_again(row)
-        current = row["youtube_id"] if row["status"] == "downloaded" or row["pinned"] else None
+        replacing = row["status"] != "downloaded" and has_file(row)  # another version on its way: this one plays till then
+        current = row["previous_youtube_id"] if replacing else row["youtube_id"] if row["status"] == "downloaded" or row["pinned"] else None
         versions = [{"youtube_id": r["youtube_id"], "title": r["title"], "channel": r["channel"], "duration_s": r["duration"],
                      "score": r["score"], "official": (r["channel"] or "").endswith(" - Topic") or r["source"] in ("ytm", "isrc"),
                      "current": r["youtube_id"] == current, "url": f"https://youtu.be/{r['youtube_id']}"}
                     for r in self.db.q("SELECT * FROM candidates WHERE track_id = ? ORDER BY score DESC LIMIT 15", (tid,))]
         return {"track": self.tracks_by_ids([tid], user["id"])[0], "current": current,
                 "current_url": f"https://youtu.be/{current}" if current else None,
-                "expected_s": (row["duration_ms"] or 0) / 1000 or None, "versions": versions}
+                "expected_s": (row["duration_ms"] or 0) / 1000 or None, "versions": versions,
+                "replacing": row["youtube_id"] if replacing else None}
 
     def _search_again(self, row) -> None:
         if self.svc.cooldown_until > time.time():
@@ -1115,10 +1121,14 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
             return h[7:].strip() if h.lower().startswith("bearer ") else ""
 
         def body(self) -> dict:
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                n = -1
+            if n < 0 or n > MAX_BODY or self.headers.get("Transfer-Encoding"):
+                self.close_connection = True  # its body isn't read, so nothing more can be read on this connection
+                raise ApiError(413 if n > MAX_BODY else 400, "Request too large." if n > MAX_BODY else "Bad request length.")
             self._body_read = True
-            n = int(self.headers.get("Content-Length") or 0)
-            if n > MAX_BODY:
-                raise ApiError(413, "Request too large.")
             if not n:
                 return {}
             try:
@@ -1149,7 +1159,8 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
                 if path == "/api/v1/auth/pair" and self.command == "POST":
                     return self.pair()
                 user = api.users.authenticate(self.token(), self.client_ip())
-                svc.last_app_request = time.time()
+                if not (self.command == "GET" and path in BACKGROUND):
+                    svc.last_app_request = time.time()
                 if user is None:
                     return self.send_json(401, {"error": "This device isn't signed in. Sign in again with a pairing code or your password."})
                 if path == "/api/v1/auth/logout" and self.command == "POST":
@@ -1183,7 +1194,8 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
                 self.send_json(500, {"error": "Server error."})
             finally:
                 svc.db.release()
-                if not self._body_read and int(self.headers.get("Content-Length") or 0):
+                if not self._body_read and ((self.headers.get("Content-Length") or "0").strip() != "0"
+                                            or self.headers.get("Transfer-Encoding")):
                     self.close_connection = True  # unread body would corrupt the next request on this connection
 
         do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = handle_any
@@ -1300,8 +1312,8 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
                     self.wfile.write(chunk)
 
         def stream(self, tid: str) -> None:
-            row = svc.db.one("SELECT file_path, status FROM tracks WHERE id = ?", (tid,))
-            if row is None or row["status"] != "downloaded" or not row["file_path"]:
+            row = svc.db.one("SELECT file_path, status, pinned FROM tracks WHERE id = ?", (tid,))
+            if row is None or not has_file(row):
                 return self.send_json(404, {"error": "That song isn't downloaded yet."})
             path = Path(row["file_path"])
             if not path.is_file():  # file deleted or moved: download it again

@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -39,15 +38,12 @@ def find_flutter(configured: str = "") -> str | None:
     return None
 
 
-def bump_build(app_dir: Path, at_least: int) -> tuple[str, int]:
-    """Raise pubspec.yaml's build number past [at_least] (phones install only newer builds)."""
-    path = app_dir / "pubspec.yaml"
-    text = path.read_text(encoding="utf-8")
+def next_build(app_dir: Path, at_least: int) -> tuple[str, int]:
+    """pubspec.yaml's version, with a build number past [at_least] and its own (phones install only newer
+    builds). It's handed to Flutter, not written into pubspec.yaml: a server running from a git clone
+    that changes its own files stops updating itself (selfupdate.py)."""
     version, build = app_updates.pubspec_version(app_dir)
-    build = max(build, at_least) + 1
-    path.write_text(re.sub(r"^(version:\s*[0-9][0-9.]*)\+\d+", rf"\g<1>+{build}", text, count=1, flags=re.M),
-                    encoding="utf-8")
-    return version, build
+    return version, max(build, at_least) + 1
 
 
 class AppBuild:
@@ -102,15 +98,16 @@ class AppBuild:
             self.state["step"] = "Putting in the name and icon"
             b.write_android(app / OVERLAY)
             published = max((e.get("build", 0) for e in self.svc.app_updates.manifest().get("files", {}).values()), default=0)
-            version, build = bump_build(app, published)
+            version, build = next_build(app, published)
             self.state["step"] = f"Building version {version} ({build}); this takes a few minutes"
-            ok, out = self.run_build(app, name)
+            ok, out = self.run_build(app, name, version, build)
             self.state["log"] = out[-4000:]
             if not ok:
                 raise RuntimeError("The build failed. The last lines of its output are below.")
             self.state["step"] = "Offering it to phones"
             app_updates.publish(self.svc.data_dir, app, notes=f"The app is now called {name}, with its new icon."
-                                if name != "Songarr" or b.icon_id() else "Back to the Songarr name and icon.")
+                                if name != "Songarr" or b.icon_id() else "Back to the Songarr name and icon.",
+                                version=version, build=build)
             self.db.set_setting("app_brand_built", signature)
             self.db.log("app-build", f"Rebuilt the app as {name} (version {version}, build {build}); phones are offered the update.")
             self.state.update(ok=True, message=f"Version {version} ({build}) is ready; phones offer it on their next check.")
@@ -122,12 +119,13 @@ class AppBuild:
             self.state.update(running=False, step=None, finished=time.time())
             self.db.release()
 
-    def _flutter(self, app: Path, name: str) -> tuple[bool, str]:
+    def _flutter(self, app: Path, name: str, version: str, build: int) -> tuple[bool, str]:
         flutter = find_flutter(self.db.setting("flutter_path") or "")
         defines = Path(tempfile.mkdtemp(prefix="songarr-build-")) / "brand.json"
         defines.write_text(json.dumps({"BRAND_NAME": name}), encoding="utf-8")  # a file: no quoting on the command line
         try:
-            r = subprocess.run([flutter, "build", "apk", "--release", "--split-per-abi", f"--dart-define-from-file={defines}"],
+            r = subprocess.run([flutter, "build", "apk", "--release", "--split-per-abi", f"--dart-define-from-file={defines}",
+                                f"--build-name={version}", f"--build-number={build}"],
                                cwd=app, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                timeout=BUILD_TIMEOUT, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                                env=os.environ | {"CI": "true"})

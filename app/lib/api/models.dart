@@ -663,10 +663,13 @@ class SongVersions {
   SongVersions(Map<String, dynamic> j)
       : current = j['current'] as String?,
         currentUrl = j['current_url'] as String?,
+        replacing = j['replacing'] as String?,
         expected = j['expected_s'] == null ? null : Duration(milliseconds: ((j['expected_s'] as num) * 1000).round()),
         versions = [for (final v in j['versions'] as List) SongVersion(v as Map<String, dynamic>)];
   final String? current;
   final String? currentUrl;
+  /// Another version on its way to replace it (the song plays the one it has until then).
+  final String? replacing;
   /// How long the song should be.
   final Duration? expected;
   /// Best match first.

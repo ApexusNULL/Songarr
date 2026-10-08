@@ -107,8 +107,10 @@ def main(argv: list[str] | None = None) -> int:
     server = make_server(svc, args.host, args.port)
     app_server = make_app_server(svc, args.app_host, args.app_port)
     threading.Thread(target=app_server.serve_forever, kwargs={"poll_interval": 0.5}, name="app-api", daemon=True).start()
-    if not svc.standby:  # a standby only keeps its copy up to date until it's needed
+    if not svc.standby:
         svc.start()
+    else:  # a standby only keeps its copy (and itself) up to date until it's needed
+        svc.start_standby()
     log.info("Songarr %s running at %s (data in %s); app API on http://%s:%d/api/v1",
              __version__, url, args.data, args.app_host, args.app_port)
     if args.open:
@@ -126,11 +128,18 @@ def main(argv: list[str] | None = None) -> int:
         shutdown()
 
     svc.restart_hook = restart
+    stopped = threading.Event()  # everything has stopped (and a standby server has the latest data)
+
+    def session_end() -> None:
+        """Windows is shutting down, restarting or signing out: stop as if on purpose, and wait for that
+        (Windows ends the program once this returns)."""
+        shutdown()
+        stopped.wait(30)
 
     tray = None
     if not args.no_tray:
         from .tray import Tray
-        tray = Tray(svc, url, args.data / "logs", stop=shutdown, restart=restart)
+        tray = Tray(svc, url, args.data / "logs", stop=shutdown, restart=restart, session_end=session_end)
         if not tray.start():
             tray = None
 
@@ -170,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
             flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             subprocess.Popen([sys.executable, "-m", "songarr", *args_again], cwd=os.getcwd(), creationflags=flags, close_fds=True)
             log.info("restarted")
+        stopped.set()
     if restarting.is_set() and os.environ.get("INVOCATION_ID"):
         # run by systemd (Linux), which would stop a copy started from here along with this one:
         # it starts Songarr again itself on this exit code (RestartForceExitStatus=75 in songarr.service)

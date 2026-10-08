@@ -12,8 +12,10 @@ import unittest
 from pathlib import Path
 
 from songarr.appapi import make_app_server
+from songarr.db import track_dict
 from songarr.matching import Candidate, TrackInfo, score
 from songarr.service import Service
+from songarr.youtube import Blocked, YouTube
 
 from tests import test_platform
 from tests.helpers import FFMPEG, FakeYouTube, spotify_track
@@ -51,6 +53,21 @@ class ReplaceTests(unittest.TestCase):
 
     def row(self):
         return self.svc.db.one("SELECT * FROM tracks WHERE id = ?", (self.tid,))
+
+    def serve(self):
+        """The app API on a free port, and a paired phone: (call, token)."""
+        port = test_platform.free_port()
+        http = make_app_server(self.svc, "127.0.0.1", port)
+        threading.Thread(target=http.serve_forever, daemon=True).start()
+        self.addCleanup(http.server_close)
+        self.addCleanup(http.shutdown)
+        fake = type("Base", (), {"base": f"http://127.0.0.1:{port}"})
+        call = lambda *a, **k: test_platform.AppAPITests.call.__func__(fake, *a, **k)  # noqa: E731
+        code, _ = self.svc.users.new_pairing_code(self.me)
+        return call, call(None, "POST", "/api/v1/auth/pair", {"code": code, "device": "Phone"})[1]["token"]
+
+    def downloaded_again(self) -> bool:
+        return wait_for(lambda: self.row()["status"] == "downloaded" and self.row()["pinned"] == 0)
 
     def test_the_chosen_version_replaces_the_old_file(self):
         path = Path(self.first["file_path"])
@@ -95,6 +112,48 @@ class ReplaceTests(unittest.TestCase):
         self.assertIn("didn't download", self.svc.db.one(
             "SELECT message FROM history WHERE event = 'failed' AND track_id = ?", (self.tid,))[0])
 
+    def test_while_another_version_is_on_its_way_the_song_still_plays(self):
+        call, token = self.serve()
+        self.svc.paused = True  # (YouTube asked the server to slow down, say: it can be hours)
+        self.svc.replace(self.tid, "rightone001", self.me)
+        _, t, _ = call(token, "GET", f"/api/v1/tracks/{self.tid}")
+        self.assertEqual((t["status"], t["playable"]), ("downloaded", True))
+        status, body, _ = call(token, "GET", f"/api/v1/stream/{self.tid}", raw=True)
+        self.assertEqual((status, body), (200, Path(self.first["file_path"]).read_bytes()))
+        _, v, _ = call(token, "GET", f"/api/v1/tracks/{self.tid}/versions")
+        self.assertEqual((v["current"], v["replacing"]), (self.first["youtube_id"], "rightone001"))
+        # a scan of the music folder doesn't give the song its old file back instead
+        self.svc.scanner.scan()
+        self.svc.scanner.match_waiting()
+        self.assertEqual((self.row()["status"], self.row()["youtube_id"]), ("wanted", "rightone001"))
+        self.svc.paused = False
+        self.svc.wake.set()
+        self.assertTrue(wait_for(lambda: self.row()["status"] == "downloaded" and self.row()["youtube_id"] == "rightone001"))
+        self.assertIsNone(call(token, "GET", f"/api/v1/tracks/{self.tid}/versions")[1]["replacing"])
+
+    def test_a_version_youtube_wont_hand_over_keeps_the_old_file(self):
+        self.svc.replace(self.tid, "agegate0001", self.me)  # wants a signed-in YouTube account
+        self.assertTrue(self.downloaded_again())
+        self.assertEqual(self.row()["youtube_id"], self.first["youtube_id"])
+        # refused with HTTP 403, a third time
+        self.svc.paused = True
+        self.svc.replace(self.tid, "rightone001", self.me)
+        self.svc._on_blocked(Blocked("throttle", "HTTP Error 403: Forbidden"), track_dict(self.row()) | {"blocked": 2})
+        self.assertEqual((self.row()["status"], self.row()["youtube_id"]), ("downloaded", self.first["youtube_id"]))
+        self.assertTrue(Path(self.row()["file_path"]).is_file())
+
+    def test_changing_your_mind_before_it_downloads(self):
+        self.svc.paused = True
+        self.svc.replace(self.tid, "rightone001", self.me)
+        self.svc.replace(self.tid, "broken0000x", self.me)  # another pick, one that won't download
+        self.svc.paused = False
+        self.svc.wake.set()
+        self.assertTrue(self.downloaded_again())
+        self.assertEqual(self.row()["youtube_id"], self.first["youtube_id"])  # what its file really is
+        self.svc.db.set_status(self.tid, "searching")  # claimed by a worker
+        with self.assertRaises(RuntimeError):
+            self.svc.replace(self.tid, "rightone001", self.me)
+
     def test_through_the_app(self):
         port = test_platform.free_port()
         http = make_app_server(self.svc, "127.0.0.1", port)
@@ -115,7 +174,7 @@ class ReplaceTests(unittest.TestCase):
             self.assertEqual(call(token, "POST", "/api/v1/tracks/NoSuchSong000000000000/replace", {"youtube": "rightone001"})[0], 404)
             status, t, _ = call(token, "POST", f"/api/v1/tracks/{self.tid}/replace",
                                 {"youtube": "https://music.youtube.com/watch?v=rightone001&si=share"})
-            self.assertEqual((status, t["status"]), (200, "wanted"))  # (replacing: downloading again)
+            self.assertEqual((status, t["status"]), (200, "downloaded"))  # (it plays the file it has till the new one is there)
             self.assertTrue(wait_for(lambda: self.row()["youtube_id"] == "rightone001" and self.row()["status"] == "downloaded"))
         finally:
             http.shutdown()
@@ -144,6 +203,24 @@ class CoverActTests(unittest.TestCase):
         self.assertEqual(self.scored("London Symphony Orchestra", ["London Symphony Orchestra"], lso).score, 1.0)
         cast = TrackInfo("Seasons of Love", ["Original Broadway Cast of Rent"], None, 180)
         self.assertGreater(self.scored("Original Broadway Cast of Rent", ["Original Broadway Cast of Rent"], cast).score, 0.9)
+
+    def test_the_artist_with_others_or_under_their_band_name(self):
+        for artist, credit in (("Jimi Hendrix", "The Jimi Hendrix Experience"),
+                               ("Andrea Bocelli", "Andrea Bocelli & London Symphony Orchestra"),
+                               ("Duke Ellington", "Duke Ellington and His Orchestra")):
+            t = TrackInfo("A Song", [artist], None, 200)
+            self.assertEqual(self.scored(credit, [credit], t).score, 1.0, credit)
+
+    def test_an_upload_found_again_by_its_isrc(self):
+        t = TrackInfo("April in Paris", ["Count Basie"], None, 220, "USRE10000001")
+        yt = YouTube.__new__(YouTube)  # (only its search is used)
+        yt.search_music = lambda q, n, source: [Candidate(id="basie000001", title=t.title, track=t.title, source=source,
+                                                          channel="Count Basie Orchestra - Topic", artists=["Count Basie Orchestra"], duration=220)]
+        yt.search_videos = lambda q, n: []
+        self.assertLess(self.scored("Count Basie Orchestra", ["Count Basie Orchestra"], t).score, 0.7)  # looks like a cover act
+        best, ranked = yt.find(t, 0.7)
+        self.assertEqual((best.id, best.source, len(ranked)), ("basie000001", "isrc", 1))  # but it's the recording
+        self.assertGreaterEqual(best.score, 0.7)
 
 
 if __name__ == "__main__":

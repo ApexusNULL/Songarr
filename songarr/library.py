@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 
 _RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
@@ -49,12 +50,25 @@ def target_path(root: str | Path, t: dict, ext: str) -> Path:
     return Path(root) / relative_path(t, ext)
 
 
+REPLACE_WAIT = 60  # seconds
+
+
 def place(src: Path, dest: Path) -> Path:
-    """Move a finished file into the library (works across drives / to the NAS)."""
+    """Move a finished file into the library (works across drives / to the NAS). Over an older file
+    that a phone is streaming right now, Windows refuses until it's closed: that's waited for."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".partial")
     shutil.copyfile(src, tmp)
-    os.replace(tmp, dest)
+    deadline = time.monotonic() + REPLACE_WAIT
+    while True:
+        try:
+            os.replace(tmp, dest)
+            break
+        except PermissionError:
+            if time.monotonic() > deadline:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(1)
     src.unlink(missing_ok=True)
     return dest
 

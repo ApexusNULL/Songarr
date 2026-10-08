@@ -235,6 +235,10 @@ class YouTube:
             for c in cands:
                 if c.id not in seen:
                     seen[c.id] = score(track, c)
+                elif c.source == "isrc" and seen[c.id].source != "isrc":  # the same upload, now found by its ISRC
+                    again = score(track, c)
+                    if again.score > seen[c.id].score:
+                        seen[c.id] = again
             return max(seen.values(), key=lambda c: c.score, default=None)
 
         on_stage("searching YouTube Music")

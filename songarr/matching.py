@@ -58,8 +58,9 @@ SOFT_WORDS = ["official video", "music video", "lyric video", "lyrics", "visuali
 COVER_ACT_WORDS = [
     "tribute", "cast", "orchestra", "symphony", "philharmonic", "string quartet", "quartet", "ensemble",
     "karaoke", "players", "covers", "cover band", "in the style of", "made famous", "originally performed",
-    "lullaby", "lullabies", "rockabye", "8 bit", "piano tribute", "revival", "experience", "the sound of",
-]
+    "lullaby", "lullabies", "rockabye", "8 bit", "piano tribute", "revival", "the sound of",
+]  # (not "experience": The Jimi Hendrix Experience is Jimi Hendrix)
+_JOINERS = re.compile(r"\s*(?:&|,|/|\bx\b|\band\b|\bwith\b|\bfeat\.?|\bft\.?)\s*", re.I)
 
 # "(feat. X)", "[with X]" anywhere, or a bare "feat. X" tail; a bare "with" is left alone ("Dance with Me").
 _FEAT = re.compile(r"\s*(?:[\(\[]\s*(?:feat\.?|ft\.?|featuring|with)\s+[^\)\]]*[\)\]]|\s(?:feat\.?|ft\.|featuring)\s+.*$)", re.I)
@@ -138,9 +139,11 @@ def score(track: TrackInfo, c: Candidate) -> Candidate:
     credited = norm(" | ".join([*c.artists, (c.channel or "").removesuffix(" - Topic")]))
     sp_artists = norm(" ".join(track.artists))
     cover_act = next((w for w in COVER_ACT_WORDS if _has(w, credited) and not _has(w, sp_artists)), None)
-    if cover_act and artist and not any(norm(a) and norm(a) in (norm(x) for x in c.artists) for a in track.artists):
+    # (credited on their own, or alongside: "Andrea Bocelli & London Symphony Orchestra", "Duke Ellington and His Orchestra")
+    credits = {norm(p) for x in [*c.artists, (c.channel or "").removesuffix(" - Topic")] for p in _JOINERS.split(x)}
+    if cover_act and artist and not any(norm(a) and norm(a) in credits for a in track.artists):
         artist = 0.0
-        reasons[-1] = f"artist ✗ (a cover act: {cover_act})"
+        reasons[reasons.index("artist ✓")] = f"artist ✗ (a cover act: {cover_act})"
 
     official = 1.0 if (c.channel or "").endswith(" - Topic") or (c.source in ("ytm", "isrc") and c.artists) else 0.0
     if official:

@@ -276,7 +276,9 @@ class Scanner:
     def match_waiting(self) -> int:
         found = 0
         placeholders = ",".join("?" * len(WAITING))
-        for row in self.db.q(f"SELECT * FROM tracks WHERE status IN ({placeholders})", WAITING):
+        # (not a version picked by hand: that's downloaded, whatever the folder has)
+        for row in self.db.q(f"""SELECT * FROM tracks WHERE status IN ({placeholders})
+                                 AND NOT (status = 'wanted' AND pinned = 1 AND youtube_id IS NOT NULL)""", WAITING):
             if self.svc.stop_event.is_set():
                 break
             try:

@@ -52,14 +52,12 @@ SETTING_RULES: dict[str, Any] = {
 }
 
 
-_UI_TEXT: list[str] = []  # read once: an update pulled meanwhile can't show a page ahead of the server's code
+_UI_TEXT = [UI.read_text(encoding="utf-8")]  # read at start-up: an update pulled since can't show a page ahead of the server's code
 
 
 def _ui(svc: Service) -> bytes:
     """The admin page, with the chosen name and icon in its title, favicon and header."""
     b = svc.branding.info()
-    if not _UI_TEXT:
-        _UI_TEXT.append(UI.read_text(encoding="utf-8"))
     page = _UI_TEXT[0].replace("<title>Songarr</title>", f"<title>{html.escape(b['name'])}</title>")
     if b["icon"]:
         page = re.sub(r'<link rel="icon" href="[^"]*">', f'<link rel="icon" href="/brand/icon-32.png?v={b["icon"]}">', page, count=1)

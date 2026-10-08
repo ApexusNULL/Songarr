@@ -19,7 +19,7 @@ from pathlib import Path
 from PIL import Image
 
 from songarr.__main__ import main
-from songarr.app_build import OVERLAY, bump_build
+from songarr.app_build import OVERLAY, next_build
 from songarr.appapi import make_app_server
 from songarr.branding import DEFAULT_ICON, BrandError, render
 from songarr.db import DB
@@ -225,8 +225,8 @@ class AppBuildTests(unittest.TestCase):
         self.build = self.svc.app_build
         self.builds = []
 
-        def fake_flutter(app, name):  # what `flutter build apk --split-per-abi` leaves behind
-            self.builds.append(name)
+        def fake_flutter(app, name, version, build):  # what `flutter build apk --split-per-abi` leaves behind
+            self.builds.append((name, version, build))
             out = app / "build" / "app" / "outputs" / "flutter-apk"
             out.mkdir(parents=True, exist_ok=True)
             (out / "app-arm64-v8a-release.apk").write_bytes(b"PK fake apk")
@@ -259,18 +259,27 @@ class AppBuildTests(unittest.TestCase):
         self.build.start()
         self.wait()
         self.assertTrue(self.build.state["ok"], self.build.state)
-        self.assertEqual(self.builds, ["Harmony"])
-        self.assertIn("version: 1.6.0+17", (self.app / "pubspec.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(self.builds, [("Harmony", "1.6.0", 17)])
         self.assertTrue((self.app / OVERLAY / "mipmap-hdpi" / "ic_launcher.png").is_file())
         latest = self.svc.app_updates.latest("arm64-v8a")
         self.assertEqual((latest["version"], latest["build"]), ("1.6.0", 17))
         self.assertIn("Harmony", latest["notes"])
         self.assertFalse(self.build.check()["needed"])
+        # the next rebuild counts on from what phones were offered
+        self.svc.branding.set(name="Harmony Home")
+        self.build.start()
+        self.wait()
+        self.assertEqual(self.builds[-1], ("Harmony Home", "1.6.0", 18))
+        self.assertEqual(self.svc.app_updates.latest("arm64-v8a")["build"], 18)
+        # and pubspec.yaml is never changed: a server running from a git clone with changed files
+        # stops updating itself
+        self.assertEqual((self.app / "pubspec.yaml").read_text(encoding="utf-8"), "name: songarr_app\nversion: 1.6.0+16\n")
 
     def test_build_numbers_only_go_up(self):
         (self.app / "pubspec.yaml").write_text("version: 1.6.0+16\n", encoding="utf-8")
-        self.assertEqual(bump_build(self.app, 20), ("1.6.0", 21))  # past what phones were already offered
-        self.assertEqual(bump_build(self.app, 3), ("1.6.0", 22))
+        self.assertEqual(next_build(self.app, 20), ("1.6.0", 21))  # past what phones were already offered
+        self.assertEqual(next_build(self.app, 3), ("1.6.0", 17))  # past pubspec.yaml's own
+        self.assertEqual((self.app / "pubspec.yaml").read_text(encoding="utf-8"), "version: 1.6.0+16\n")
 
 
 class CommandLineTests(unittest.TestCase):

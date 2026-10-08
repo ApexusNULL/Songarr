@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -103,6 +104,28 @@ class UpdateTests(unittest.TestCase):
         self.assertTrue(self.deps.restart_when_quiet())
         self.assertEqual(restarted, [True])
         self.assertTrue(self.svc.draining)  # no new downloads were started meanwhile
+
+    def test_one_check_at_a_time(self):
+        started, go = threading.Event(), threading.Event()
+
+        def slow_pip(specs):
+            started.set()
+            go.wait(5)
+            return True, "ok"
+        self.deps.pip_install = slow_pip
+        self.deps.imports_ok = lambda modules: (True, "")
+        first = threading.Thread(target=self.deps.check)
+        first.start()
+        self.assertTrue(started.wait(5))
+        self.assertIn("Already checking", self.deps.check()["error"])  # "Check now" during the scheduled check
+        go.set()
+        first.join(5)
+        self.assertNotIn("Already checking", self.deps.check()["error"] or "")
+
+    def test_a_standby_server_keeps_itself_up_to_date(self):
+        self.svc.start_standby()
+        self.assertEqual([t.name for t in self.svc.threads], ["dependencies"])  # (and nothing else: no downloads)
+        self.assertTrue(self.svc.threads[0].is_alive())
 
     def test_can_be_switched_off(self):
         self.svc.db.set_setting("auto_update", False)

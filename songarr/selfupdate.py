@@ -24,7 +24,8 @@ from typing import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 GIT_TIMEOUT = 120
-MODULES = ["songarr.__main__", "songarr.web", "songarr.appapi", "songarr.service"]  # must import after an update
+MODULES = ["songarr.__main__", "songarr.web", "songarr.appapi", "songarr.service",  # must import after an update
+           "songarr.cluster", "songarr.tray"]  # (imported by every start, not by the others)
 
 
 def _python() -> str:

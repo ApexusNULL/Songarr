@@ -206,7 +206,8 @@ void main() {
          'current': false, 'url': 'https://youtu.be/g9L-hOwKcHQ'},
       ],
     });
-    expect((v.current, v.expected?.inSeconds, v.versions.length), ('PvizEDA1Nkw', 348, 2));
+    expect((v.current, v.expected?.inSeconds, v.versions.length, v.replacing), ('PvizEDA1Nkw', 348, 2, null));
+    expect(SongVersions({'current': 'PvizEDA1Nkw', 'replacing': 'g9L-hOwKcHQ', 'versions': []}).replacing, 'g9L-hOwKcHQ');
     final cast = v.versions.first, queen = v.versions.last;
     expect((cast.channel, cast.current, cast.official), ('Queen at The Opera Original Cast', true, true)); // ' - Topic' dropped
     expect((queen.youtubeId, queen.duration?.inSeconds, queen.current, queen.url), ('g9L-hOwKcHQ', 349, false, 'https://youtu.be/g9L-hOwKcHQ'));

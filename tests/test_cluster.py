@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import sqlite3
@@ -171,13 +172,15 @@ class FailoverTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
         self.shared = self.root / "nas" / "Songarr servers"
-        self.saved = (cluster.TAKEOVER_AFTER, cluster.TAKE_PAUSE, cluster.SETTLE)
+        self.saved = (cluster.TAKEOVER_AFTER, cluster.TAKE_PAUSE, cluster.SETTLE, cluster.FENCE_AFTER, cluster.TICK,
+                      cluster.MAILBOX_KEEP, cluster._write_json)
         cluster.TAKEOVER_AFTER, cluster.TAKE_PAUSE, cluster.SETTLE = 0.3, 0.05, 0
         self.pc = Node(self.root, self.shared, "pc", "main", WIN_MUSIC)  # the first server starts things off
         self.box = None
 
     def tearDown(self):
-        cluster.TAKEOVER_AFTER, cluster.TAKE_PAUSE, cluster.SETTLE = self.saved
+        (cluster.TAKEOVER_AFTER, cluster.TAKE_PAUSE, cluster.SETTLE, cluster.FENCE_AFTER, cluster.TICK,
+         cluster.MAILBOX_KEEP, cluster._write_json) = self.saved
         for n in (self.pc, self.box):
             if n:
                 n.stop()
@@ -188,6 +191,18 @@ class FailoverTests(unittest.TestCase):
 
     def song_path(self, node: Node) -> str:
         return node.svc.db.one("SELECT file_path FROM tracks WHERE id = ?", (f"{1:022d}",))[0]
+
+    def lease(self) -> dict:
+        return json.loads((self.shared / "lease.json").read_text())
+
+    def nas_away(self) -> None:
+        """Nothing can be written to the cluster folder (the NAS is away) until nas_back()."""
+        def away(*_):
+            raise OSError("[WinError 53] The network path was not found")
+        cluster._write_json = away
+
+    def nas_back(self) -> None:
+        cluster._write_json = self.saved[-1]
 
     def test_the_backup_keeps_a_copy_and_takes_over(self):
         self.assertEqual(self.pc.cluster.state, "active")
@@ -375,6 +390,179 @@ class FailoverTests(unittest.TestCase):
         self.box.cluster.tick()
         self.assertEqual(self.box.restart(), "active")
         self.assertIsNotNone(self.box.svc.db.one("SELECT 1 FROM users WHERE name = 'Last change'"))  # nothing lost
+
+    # -- when things go wrong ---------------------------------------------------------------------
+
+    def test_no_takeover_the_moment_the_nas_is_back(self):
+        """The NAS away for longer than the takeover time (rebooting, say): when it's back, the standby
+        doesn't take over before the active server has had the chance to beat again."""
+        self.pc.cluster.tick()
+        self.add_box()
+        self.box.cluster.tick()  # the standby saw the last heartbeat before the NAS went
+        self.nas_away()
+        for _ in range(3):
+            time.sleep(0.15)
+            for node in (self.pc, self.box):
+                with self.assertRaises(OSError):
+                    node.cluster.tick()
+        self.nas_back()
+        self.box.cluster.tick()  # back, and the standby happens to look first
+        self.pc.cluster.tick()
+        self.box.cluster.tick()
+        self.assertEqual((self.lease()["node"], self.box.restarts, self.pc.restarts), ("pc", [], []))
+        # a PC that's really gone: the box takes over once it has watched the takeover time
+        self.pc.cluster._done = True
+        time.sleep(0.4)
+        self.box.cluster.tick()
+        self.assertEqual((self.lease()["node"], self.box.restarts), ("box", ["standby"]))
+
+    def hand_back(self) -> None:
+        """The PC away, the box active and changing things, the PC back: the box hands back over."""
+        self.pc.cluster.tick()
+        self.add_box()
+        self.pc.cluster._done = True
+        time.sleep(0.4)
+        self.box.cluster.tick()
+        self.box.restart()  # the backup is active
+        self.box.svc.users.create("Made while the PC was away")
+        self.box.cluster._last_snapshot = 0
+        self.box.cluster.tick()
+        self.pc.restart()
+        self.pc.cluster.tick()  # asks for the lease
+        for node in (self.box, self.pc, self.box):  # the box hands over (with a last copy) once it sees the PC
+            if self.lease()["node"] != "pc":
+                node.cluster.tick()
+        self.assertEqual((self.lease()["node"], self.pc.restarts), ("pc", []))
+        self.assertEqual(self.box.restart(), "standby")
+
+    def made_while_away(self, node: Node):
+        return node.svc.db.one("SELECT 1 FROM users WHERE name = 'Made while the PC was away'")
+
+    def test_a_hand_back_waits_for_the_last_copy(self):
+        self.hand_back()
+
+        def hiccup():
+            raise OSError("the NAS hiccuped")
+        self.pc.cluster.import_snapshot = hiccup
+        self.pc.cluster.tick()
+        self.assertEqual(self.pc.restarts, [])  # not active without the box's last copy
+        del self.pc.cluster.import_snapshot  # (copying works again)
+        self.pc.cluster.tick()
+        self.assertEqual(self.pc.restarts, ["standby"])
+        self.assertEqual(self.pc.restart(), "active")
+        self.assertIsNotNone(self.made_while_away(self.pc))
+
+    def test_the_backup_takes_the_lease_back_if_the_main_server_cant_copy_it(self):
+        self.hand_back()
+
+        def broken():
+            raise OSError("no room left on this disk")
+        self.pc.cluster.import_snapshot = broken
+        self.pc.cluster.tick()
+        self.box.cluster.tick()
+        time.sleep(0.4)
+        self.pc.cluster.tick()
+        self.box.cluster.tick()  # the lease hasn't moved on: the box, with everything, takes it back
+        self.assertEqual((self.lease()["node"], self.pc.restarts), ("box", []))
+        self.assertEqual(self.box.restart(), "active")
+        self.assertIsNotNone(self.made_while_away(self.box))
+
+    def test_a_damaged_lease(self):
+        """An empty lease.json (a power cut on the NAS, say): the active server writes it again; with
+        nobody active, a standby takes over once it has stayed damaged for the takeover time."""
+        self.pc.cluster.tick()
+        self.add_box()
+        (self.shared / "lease.json").write_text("")
+        self.pc.cluster.tick()
+        self.assertEqual(self.lease()["node"], "pc")
+        (self.shared / "lease.json").write_text("")  # and then both servers restart
+        self.assertEqual((self.pc.restart(), self.box.restart()), ("standby", "standby"))
+        self.pc.cluster.tick()
+        self.box.cluster.tick()
+        time.sleep(0.4)
+        self.pc.cluster.tick()
+        self.assertEqual((self.lease()["node"], self.pc.restarts), ("pc", ["standby"]))
+        self.assertEqual(self.pc.restart(), "active")
+
+    def test_an_active_server_that_cant_renew_the_lease_stops_taking_changes(self):
+        """A standby may be taking over meanwhile, and what this one took in would be lost."""
+        cluster.FENCE_AFTER = 0.2
+        self.pc.cluster.tick()
+        self.nas_away()
+        time.sleep(0.3)
+        with self.assertRaises(OSError):
+            self.pc.cluster.tick()
+        self.pc.cluster._fence_if_stale()  # (a thread of its own does this every second)
+        self.assertTrue(self.pc.svc.standby)  # the apps are told to go elsewhere
+        self.assertTrue(self.pc.svc.paused)  # and no downloads start
+        self.nas_back()
+        self.pc.cluster.tick()  # the lease renewed: back to work
+        self.assertEqual((self.pc.svc.standby, self.pc.svc.paused, self.pc.restarts), (False, False, []))
+
+    def test_the_heartbeat_goes_on_during_a_long_snapshot(self):
+        self.pc.cluster.tick()
+        beats = []
+
+        def watched(path, data):
+            if path.name == "lease.json":
+                beats.append(data["beat"])
+            self.saved[-1](path, data)
+        cluster._write_json, cluster.TICK = watched, 0  # (here every chunk copied takes "a while")
+        self.pc.cluster.snapshot(force=True)
+        self.assertGreater(len(beats), 1)
+        self.assertEqual(beats, sorted(set(beats)))  # a heartbeat that keeps changing
+        # another server took the lease meanwhile: the copy stops, and isn't offered to anyone
+        version = json.loads((self.shared / "snapshot" / "meta.json").read_text())["version"]
+        (self.shared / "lease.json").write_text(json.dumps({"node": "box", "epoch": 9, "beat": 0}))
+        with self.assertRaises(cluster.ClusterError):
+            self.pc.cluster.snapshot(force=True)
+        self.assertEqual(json.loads((self.shared / "snapshot" / "meta.json").read_text())["version"], version)
+
+    def test_a_standby_takes_over_even_if_the_last_snapshot_cant_be_copied(self):
+        self.pc.cluster.tick()
+        self.add_box()  # has the first copy
+        self.pc.svc.users.create("Later")
+        self.pc.cluster._last_snapshot = 0
+        self.pc.cluster.tick()  # a newer copy, which turns out damaged (cut short)
+        meta = json.loads((self.shared / "snapshot" / "meta.json").read_text())
+        gz = self.shared / "snapshot" / meta["db"]
+        gz.write_bytes(gz.read_bytes()[: gz.stat().st_size // 2])
+        with self.assertRaises(OSError):  # (what starting up as a standby expects)
+            self.box.cluster.import_snapshot()
+        self.pc.cluster._done = True  # and then the PC goes quiet
+        with self.assertLogs("songarr.cluster", "WARNING"):
+            self.box.cluster.tick()
+        time.sleep(0.4)
+        self.box.cluster.tick()
+        self.assertEqual((self.lease()["node"], self.box.restarts), ("box", ["standby"]))  # with the copy it has
+
+    def test_the_mailbox_is_tidied_by_this_servers_own_clock(self):
+        """Not by the times on the NAS, which may come from a clock that's hours out."""
+        commands = self.shared / "commands"
+        commands.mkdir(parents=True, exist_ok=True)
+        request = commands / "1-2-3-abcdef.json"
+        request.write_text("{}")
+        os.utime(request, (time.time() - 7200,) * 2)
+        self.pc.cluster._tidy_mailbox()
+        self.assertTrue(request.exists())  # it only just arrived, as far as this server can tell
+        cluster.MAILBOX_KEEP = 0.1
+        time.sleep(0.15)
+        self.pc.cluster._tidy_mailbox()
+        self.assertFalse(request.exists())  # nobody collected it
+
+    def test_the_newest_snapshot_is_kept_whatever_the_clocks(self):
+        snapshots = self.shared / "snapshot"
+        self.pc.cluster.tick()
+        for version in (97, 98, 99):  # left by a server whose clock is an hour ahead
+            old = snapshots / f"songarr-{version}.db.gz"
+            old.write_bytes(b"")
+            os.utime(old, (time.time() + 3600,) * 2)
+        self.pc.svc.users.create("New")
+        self.pc.cluster._last_snapshot = 0
+        self.pc.cluster.tick()
+        meta = json.loads((snapshots / "meta.json").read_text())
+        self.assertTrue((snapshots / meta["db"]).exists())
+        self.assertEqual(len(list(snapshots.glob("songarr-*.db.gz"))), cluster.KEEP_SNAPSHOTS)
 
 
 class OneAdminPageTests(unittest.TestCase):

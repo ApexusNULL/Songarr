@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import sys
 import tempfile
 import time
 import unittest
@@ -41,6 +42,17 @@ class TrayTests(unittest.TestCase):
 
     def labels(self) -> list[str]:
         return [i.label if i else "---" for i in self.tray.items()]
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows only")
+    def test_windows_shutting_down_stops_songarr_properly(self):
+        from songarr import tray
+        self.tray.session_end = lambda: self.calls.append("session end")
+        win = tray._Win(self.tray)  # (its window procedure only: no icon is shown)
+        self.assertEqual(win._wndproc(None, tray.WM_QUERYENDSESSION, 0, 0), 1)
+        win._wndproc(None, tray.WM_ENDSESSION, 0, 0)  # the shutdown was called off
+        self.assertEqual(self.calls, [])
+        win._wndproc(None, tray.WM_ENDSESSION, 1, 0)
+        self.assertEqual(self.calls, ["session end"])
 
     def test_the_icon_ships_with_songarr(self):
         self.assertTrue(ICON.exists())

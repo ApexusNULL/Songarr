@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/client.dart';
 import '../api/models.dart';
+import 'offline.dart';
 import 'session.dart';
 
 SongarrApi _api(Ref ref) {
@@ -15,8 +16,15 @@ final homeProvider = FutureProvider.autoDispose<Home>((ref) => _api(ref).home())
 final followingProvider = FutureProvider.autoDispose<List<FollowedArtist>>((ref) => _api(ref).followingArtists());
 final notificationsProvider = FutureProvider.autoDispose<Notifications>((ref) => _api(ref).notifications());
 final libraryProvider = FutureProvider.autoDispose<LibraryInfo>((ref) => _api(ref).library());
-final likedProvider = FutureProvider.autoDispose<TrackPage>((ref) => _api(ref).liked());
-final playlistProvider = FutureProvider.autoDispose.family<TrackPage, String>((ref, id) => _api(ref).playlist(id));
+final likedProvider = FutureProvider.autoDispose<TrackPage>((ref) async => _fresh(ref, await _api(ref).liked()));
+final playlistProvider =
+    FutureProvider.autoDispose.family<TrackPage, String>((ref, id) async => _fresh(ref, await _api(ref).playlist(id)));
+
+/// Downloads in [page] of songs replaced on the server since are fetched again.
+TrackPage _fresh(Ref ref, TrackPage page) {
+  ref.read(offlineProvider.notifier).refreshStale(page.tracks);
+  return page;
+}
 final albumProvider = FutureProvider.autoDispose.family<TrackPage, String>((ref, id) => _api(ref).album(id));
 final artistProvider = FutureProvider.autoDispose.family<ArtistPage, String>((ref, name) => _api(ref).artist(name));
 final searchProvider = FutureProvider.autoDispose.family<SearchResults, String>((ref, q) => _api(ref).search(q));

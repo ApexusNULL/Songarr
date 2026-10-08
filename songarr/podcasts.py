@@ -12,6 +12,7 @@ from __future__ import annotations
 import email.utils
 import hashlib
 import html
+import http.client
 import ipaddress
 import json
 import logging
@@ -51,35 +52,83 @@ class UnsafeURL(PodcastError):
 
 # -- fetching -----------------------------------------------------------------------------
 
-def check_url(url: str) -> None:
-    """Refuse anything but http(s) to a public internet address."""
+def _web_address(url: str) -> urllib.parse.ParseResult:
     u = urllib.parse.urlparse(url)
     if u.scheme not in ("http", "https") or not u.hostname:
         raise UnsafeURL(f"Not a web address: {url[:100]}")
-    if allow_private_hosts:
-        return
+    return u
+
+
+def _addresses(host: str, port: int) -> list[str]:
+    """Every address [host] has; all of them must be on the public internet."""
     try:
-        infos = socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except socket.gaierror as e:
-        raise PodcastError(f"Can't find {u.hostname}") from e
+        raise PodcastError(f"Can't find {host}") from e
     for info in infos:
-        ip = ipaddress.ip_address(info[4][0].split("%")[0])
-        if not ip.is_global:
-            raise UnsafeURL(f"{u.hostname} points into a private network")
+        if not allow_private_hosts and not ipaddress.ip_address(info[4][0].split("%")[0]).is_global:
+            raise UnsafeURL(f"{host} points into a private network")
+    return [info[4][0] for info in infos]
+
+
+def check_url(url: str) -> None:
+    """Refuse anything but http(s) to a public internet address."""
+    u = _web_address(url)
+    if not allow_private_hosts:
+        _addresses(u.hostname, u.port or (443 if u.scheme == "https" else 80))
+
+
+def _connect(address: tuple[str, int], *args):
+    """socket.create_connection, to an address that was just checked. Looking the name up again to
+    connect would let a second answer (DNS rebinding) point into the home network."""
+    host, port = address
+    error: OSError | None = None
+    for ip in _addresses(host, port):
+        try:
+            return socket.create_connection((ip, port), *args)
+        except OSError as e:
+            error = e
+    raise error or OSError(f"Can't connect to {host}")
+
+
+# The connections keep the name for everything else: the Host header, and for https the name sent
+# to the server and checked against its certificate.
+class _CheckedHTTP(http.client.HTTPConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _connect
+
+
+class _CheckedHTTPS(http.client.HTTPSConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _connect
+
+
+class _CheckedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_CheckedHTTP, req)
+
+
+class _CheckedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_CheckedHTTPS, req, context=self._context)
 
 
 class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        check_url(newurl)
+        check_url(newurl)  # refused before following (the connection checks the address it gets again)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-_opener = urllib.request.build_opener(_CheckedRedirects())
+# No proxies (from the environment or Windows' settings): a proxy would look the name up itself.
+_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _CheckedHTTPHandler, _CheckedHTTPSHandler,
+                                      _CheckedRedirects())
 
 
 def open_url(url: str, headers: dict | None = None, method: str = "GET", timeout: float = 30):
     """urlopen for outside addresses only (redirects are checked too). Raises HTTPError as usual."""
-    check_url(url)
+    _web_address(url)  # (the address is checked as the connection is made)
     req = urllib.request.Request(url, headers={"User-Agent": UA, **(headers or {})}, method=method)
     return _opener.open(req, timeout=timeout)
 

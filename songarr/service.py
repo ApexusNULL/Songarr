@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import library, playlists, tagging
-from .db import DB, track_dict
+from .db import DB, has_file, track_dict
 from .matching import Candidate, TrackInfo
 from .app_build import AppBuild
 from .app_updates import AppUpdates
@@ -146,6 +146,13 @@ class Service:
         for t in self.threads:
             t.start()
 
+    def start_standby(self) -> None:
+        """A standby (backup) server only keeps itself up to date (its code and packages) until it's
+        needed: becoming active restarts it into start()."""
+        self.threads = [threading.Thread(target=self.dependencies.run, name="dependencies", daemon=True)]
+        for t in self.threads:
+            t.start()
+
     def stop(self, wait: bool = False) -> None:
         self.stop_event.set()
         self.wake.set()
@@ -197,8 +204,10 @@ class Service:
                 log.warning("YouTube %s; pausing %d min, pace now %d/hour", e.kind, pause // 60, per_hour)
         tries = (t.get("blocked") or 0) + 1
         if e.kind == "throttle" and tries >= MAX_BLOCKED_TRIES:
-            self._fail(t, RuntimeError(f"YouTube refused this upload {tries} times (HTTP 403)"))
-            self.db.set_status(tid, "failed", blocked=0)
+            refused = RuntimeError(f"YouTube refused this upload {tries} times (HTTP 403)")
+            if not self._keep_old(t, refused):
+                self._fail(t, refused)
+                self.db.set_status(tid, "failed", blocked=0)
         else:
             self.db.set_status(tid, "wanted", blocked=tries, error="Waiting: YouTube asked Songarr to slow down")
 
@@ -260,12 +269,18 @@ class Service:
             if tid in self.active:
                 self.active[tid].update(stage=stage, **kw)
 
+    def _keep_old(self, t: dict, e: Exception) -> bool:
+        """Another version chosen for a song that has a file, and it won't download: the song keeps the
+        file (and the upload) it had. False when there's no file to keep."""
+        if not (t.get("pinned") and t.get("file_path") and Path(t["file_path"]).is_file()):
+            return False
+        self.db.set_status(t["id"], "downloaded", pinned=0, youtube_id=t.get("previous_youtube_id"), previous_youtube_id=None,
+                           error=None, attempts=0, next_attempt=None, blocked=0)
+        self.db.log("failed", f"{t['title']}: the version chosen didn't download ({str(e)[:200]}); it keeps the one it had", t["id"])
+        return True
+
     def _fail(self, t: dict, e: Exception) -> None:
-        if t.get("pinned") and t.get("file_path") and Path(t["file_path"]).is_file():
-            # Another version that won't download: the song keeps the file it had.
-            self.db.set_status(t["id"], "downloaded", pinned=0, youtube_id=t.get("previous_youtube_id") or t.get("youtube_id"),
-                               previous_youtube_id=None, error=None, attempts=0, next_attempt=None)
-            self.db.log("failed", f"{t['title']}: the version chosen didn't download ({str(e)[:200]}); it keeps the one it had", t["id"])
+        if self._keep_old(t, e):
             return
         attempts = (t.get("attempts") or 0) + 1
         delay = RETRY_DELAYS[attempts - 1] if attempts <= len(RETRY_DELAYS) else None
@@ -282,10 +297,10 @@ class Service:
             self.db.set_status(tid, "wanted")
         except Blocked as e:
             self._on_blocked(e, t)
-        except NeedsSignIn:
+        except NeedsSignIn as e:
             if self.db.setting("cookies_file"):
                 self._fail(t, RuntimeError("YouTube still wants a sign-in for this song; the saved session may have expired."))
-            else:  # pointless to retry until someone signs in; signing in retries these
+            elif not self._keep_old(t, e):  # pointless to retry until someone signs in; signing in retries these
                 self.db.set_status(tid, "failed", error=NEEDS_SIGNIN, next_attempt=None)
                 self.db.log("failed", f"{t['title']}: needs a signed-in YouTube account", tid)
         except Exception as e:  # any failure: record it and retry later with backoff
@@ -361,7 +376,7 @@ class Service:
             final = library.place(path, dest)  # (over the old file, when it's the same path)
             library.write_folder_cover(final.parent, cover)
             if t.get("file_path") and Path(t["file_path"]) != final:
-                self._remove_replaced(Path(t["file_path"]), tid)
+                self._remove_replaced(Path(t["file_path"]), final, tid)
             self.db.set_status(tid, "downloaded", youtube_id=cand.id, match_score=cand.score, file_path=str(final),
                                file_size=final.stat().st_size, bitrate=ytinfo.get("abr"), error=None, attempts=0,
                                next_attempt=None, blocked=0, previous_youtube_id=None)
@@ -473,12 +488,15 @@ class Service:
         """Download this YouTube upload for the song (it got the wrong recording: a cover, a live
         version...), ahead of everything else. The new file replaces the old one; if it won't download,
         the old one stays. From the admin site (Pick) or the app (Replace), by anyone in the family."""
-        row = self.db.one("SELECT title, artists, status, youtube_id FROM tracks WHERE id = ?", (tid,))
+        row = self.db.one("SELECT title, artists, status, youtube_id, pinned, previous_youtube_id, file_path FROM tracks WHERE id = ?",
+                          (tid,))
         if row is None:
             raise ValueError("Unknown song.")
-        if tid in self.active:
+        if tid in self.active or row["status"] in ("searching", "downloading"):  # (claimed, maybe not yet in active)
             raise RuntimeError("That song is being downloaded right now. Try again in a minute.")
-        previous = row["youtube_id"] if row["status"] == "downloaded" else None
+        # what the song has: the upload it was downloaded from, or (another version already on its way) the one before
+        previous = row["previous_youtube_id"] if row["status"] != "downloaded" and has_file(row) else \
+            row["youtube_id"] if row["status"] == "downloaded" else None
         self.db.run("UPDATE tracks SET monitored = 1, priority = MAX(priority, ?), requested_at = ? WHERE id = ?",
                     (REQUEST_PRIORITY, time.time(), tid))
         self.db.set_status(tid, "wanted", youtube_id=youtube_id, pinned=1, previous_youtube_id=previous, error=None,
@@ -488,12 +506,13 @@ class Service:
         self.db.log("manual-pick", f"{who[0] if who else 'You'} chose another version of {song}: https://youtu.be/{youtube_id}", tid)
         self.wake.set()
 
-    def _remove_replaced(self, old: Path, tid: str) -> None:
+    def _remove_replaced(self, old: Path, new: Path, tid: str) -> None:
         """The file a new version replaced, when it was somewhere else: deleted if Songarr made it (for
-        this song) inside the music library. Anything else is left alone."""
+        this song) inside the music library. Anything else is left alone, and so is the new file under
+        another name for the same place (a mapped drive and its network path)."""
         try:
             root = Path(self.db.setting("library_root") or "").resolve()
-            if old.is_file() and old.resolve().is_relative_to(root) and tagging.read_spotify_id(old) == tid:
+            if old.is_file() and not old.samefile(new) and old.resolve().is_relative_to(root) and tagging.read_spotify_id(old) == tid:
                 old.unlink()
                 self.db.log("deleted", f"Removed the version it replaced ({old})", tid)
         except OSError as e:
