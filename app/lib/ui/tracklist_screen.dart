@@ -70,7 +70,7 @@ class TrackListScreen extends ConsumerWidget {
         ),
         _BackButton(
           actions: [
-            if (_kind == _Kind.liked && page != null && page.tracks.length > 1)
+            if (_kind == _Kind.liked && page != null && page.tracks.length > 1 && !page.offline)
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_horiz_rounded),
                 color: surface,
@@ -110,6 +110,8 @@ class TrackListScreen extends ConsumerWidget {
         ? ''
         : _kind == _Kind.downloads
             ? '${tracks.length} songs · ${formatBytes(offline.downloadBytes)}'
+            : page.offline
+            ? 'Offline · ${tracks.length} song${tracks.length == 1 ? '' : 's'} on this phone · pull down to try again'
             : '${page.total} songs · ${formatLength(total)}${waiting > 0 ? ' · $waiting still downloading to server' : ''}';
     final art = switch (_kind) {
       _Kind.liked => const LikedCover(size: 170, radius: 85),

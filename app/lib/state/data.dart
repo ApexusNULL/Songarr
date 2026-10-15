@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 
@@ -12,20 +14,42 @@ SongarrApi _api(Ref ref) {
   return api;
 }
 
+/// A list from the server, with a copy kept on the phone (per profile): when no server can be
+/// reached, the copy is shown instead.
+Future<T> _kept<T>(Ref ref, String key, Future<T> Function() fetch, Map<String, dynamic> Function(T) toJson,
+    T Function(Map<String, dynamic>) fromCopy) async {
+  final store = ref.read(offlineProvider.notifier);
+  final name = 'u${ref.read(sessionProvider).value?.userId}_$key';
+  try {
+    final value = await fetch();
+    unawaited(store.keepList(name, toJson(value)));
+    return value;
+  } on ApiException catch (e) {
+    final copy = e.away ? await store.keptList(name) : null;
+    if (copy == null) rethrow;
+    return fromCopy(copy);
+  }
+}
+
+/// A list of songs, kept the same way; offline it has the songs on this phone. Downloads of songs
+/// replaced on the server since are fetched again.
+Future<TrackPage> _keptPage(Ref ref, String key, Future<TrackPage> Function() fetch) async {
+  final store = ref.read(offlineProvider.notifier);
+  final page = await _kept(ref, key, fetch, (p) => p.toJson(), (j) => store.onThisPhone(TrackPage.fromJson(j)));
+  if (!page.offline) store.refreshStale(page.tracks);
+  return page;
+}
+
 final homeProvider = FutureProvider.autoDispose<Home>((ref) => _api(ref).home());
 final followingProvider = FutureProvider.autoDispose<List<FollowedArtist>>((ref) => _api(ref).followingArtists());
 final notificationsProvider = FutureProvider.autoDispose<Notifications>((ref) => _api(ref).notifications());
-final libraryProvider = FutureProvider.autoDispose<LibraryInfo>((ref) => _api(ref).library());
-final likedProvider = FutureProvider.autoDispose<TrackPage>((ref) async => _fresh(ref, await _api(ref).liked()));
+final libraryProvider = FutureProvider.autoDispose<LibraryInfo>(
+    (ref) => _kept(ref, 'library', _api(ref).library, (l) => l.toJson(), LibraryInfo.fromJson));
+final likedProvider = FutureProvider.autoDispose<TrackPage>((ref) => _keptPage(ref, 'liked', _api(ref).liked));
 final playlistProvider =
-    FutureProvider.autoDispose.family<TrackPage, String>((ref, id) async => _fresh(ref, await _api(ref).playlist(id)));
-
-/// Downloads in [page] of songs replaced on the server since are fetched again.
-TrackPage _fresh(Ref ref, TrackPage page) {
-  ref.read(offlineProvider.notifier).refreshStale(page.tracks);
-  return page;
-}
-final albumProvider = FutureProvider.autoDispose.family<TrackPage, String>((ref, id) => _api(ref).album(id));
+    FutureProvider.autoDispose.family<TrackPage, String>((ref, id) => _keptPage(ref, 'playlist_$id', () => _api(ref).playlist(id)));
+final albumProvider =
+    FutureProvider.autoDispose.family<TrackPage, String>((ref, id) => _keptPage(ref, 'album_$id', () => _api(ref).album(id)));
 final artistProvider = FutureProvider.autoDispose.family<ArtistPage, String>((ref, name) => _api(ref).artist(name));
 final searchProvider = FutureProvider.autoDispose.family<SearchResults, String>((ref, q) => _api(ref).search(q));
 final catalogProvider =

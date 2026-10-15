@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:songarr_app/api/client.dart';
 import 'package:songarr_app/api/models.dart';
@@ -211,5 +213,21 @@ void main() {
     final cast = v.versions.first, queen = v.versions.last;
     expect((cast.channel, cast.current, cast.official), ('Queen at The Opera Original Cast', true, true)); // ' - Topic' dropped
     expect((queen.youtubeId, queen.duration?.inSeconds, queen.current, queen.url), ('g9L-hOwKcHQ', 349, false, 'https://youtu.be/g9L-hOwKcHQ'));
+  });
+
+  test('a list kept on the phone comes back the same (shown while no server can be reached)', () {
+    final page = TrackPage.fromJson({
+      'name': 'Road Trip', 'editable': true, 'total': 2,
+      'tracks': [
+        {'id': 'a', 'title': 'One', 'artists': ['X'], 'status': 'downloaded', 'playable': true, 'size': 100, 'format': 'm4a'},
+        {'id': 'b', 'title': 'Two', 'artists': ['X'], 'status': 'downloaded', 'playable': true, 'size': 200, 'format': 'm4a'},
+      ],
+    });
+    final back = TrackPage.fromJson(jsonDecode(jsonEncode(page.toJson())) as Map<String, dynamic>);
+    expect((back.name, back.total, back.editable, back.offline), ('Road Trip', 2, true, false));
+    expect([for (final t in back.tracks) (t.id, t.size)], [('a', 100), ('b', 200)]);
+    final lib = LibraryInfo.fromJson({'liked': {'count': 7}, 'playlists': [{'id': 'up1', 'name': 'Road Trip'}]});
+    final libBack = LibraryInfo.fromJson(jsonDecode(jsonEncode(lib.toJson())) as Map<String, dynamic>);
+    expect((libBack.likedCount, libBack.playlists.single.name), (7, 'Road Trip'));
   });
 }

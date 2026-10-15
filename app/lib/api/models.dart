@@ -88,6 +88,10 @@ class TrackPage {
   String get name => info['name'] as String? ?? '';
   String? get imageUrl => (info['image_url'] ?? info['cover_url']) as String?;
   bool get editable => info['editable'] == true;
+  /// The copy kept on this phone, shown while no server can be reached (only the songs on the phone).
+  bool get offline => info['offline'] == true;
+
+  Map<String, dynamic> toJson() => {...info, 'total': total, 'tracks': [for (final t in tracks) t.json]};
 }
 
 class AlbumSummary {
@@ -389,6 +393,11 @@ class LibraryInfo {
   LibraryInfo(this.likedCount, this.playlists);
   final int likedCount;
   final List<PlaylistSummary> playlists;
+
+  factory LibraryInfo.fromJson(Map<String, dynamic> j) => LibraryInfo((j['liked']['count'] as num).toInt(),
+      [for (final p in j['playlists'] as List) PlaylistSummary(p as Map<String, dynamic>)]);
+
+  Map<String, dynamic> toJson() => {'liked': {'count': likedCount}, 'playlists': [for (final p in playlists) p.json]};
 }
 
 class SearchResults {

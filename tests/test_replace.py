@@ -154,6 +154,30 @@ class ReplaceTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.svc.replace(self.tid, "rightone001", self.me)
 
+    def test_a_songs_size_follows_its_file(self):
+        call, token = self.serve()
+        path = Path(self.first["file_path"])
+        with path.open("ab") as f:
+            f.write(b"\0" * 1000)  # (its tags edited elsewhere, say)
+        status, body, _ = call(token, "GET", f"/api/v1/stream/{self.tid}", raw=True)
+        self.assertEqual((status, len(body), self.row()["file_size"]), (200, path.stat().st_size, path.stat().st_size))
+        with path.open("ab") as f:
+            f.write(b"\0" * 1000)
+        self.svc.scanner.scan()  # the music folder's scan puts it right too
+        self.assertEqual(self.row()["file_size"], path.stat().st_size)
+
+    def test_a_music_folder_away_for_a_moment_isnt_songs_gone(self):
+        call, token = self.serve()
+        self.svc.db.set_setting("library_root", str(self.dir / "Music on a drive that's away"))
+        self.svc.db.set_status(self.tid, "downloaded", file_path=str(self.dir / "Music on a drive that's away" / "song.m4a"))
+        self.assertEqual(call(token, "GET", f"/api/v1/stream/{self.tid}", raw=True)[0], 503)
+        self.assertEqual(self.row()["status"], "downloaded")  # not marked for downloading again
+        self.svc.db.set_setting("library_root", str(self.music))  # back, and the file really is gone: download it again
+        self.svc.paused = True
+        self.svc.db.set_status(self.tid, "downloaded", file_path=str(self.music / "gone.m4a"))
+        self.assertEqual(call(token, "GET", f"/api/v1/stream/{self.tid}", raw=True)[0], 404)
+        self.assertEqual(self.row()["status"], "wanted")
+
     def test_through_the_app(self):
         port = test_platform.free_port()
         http = make_app_server(self.svc, "127.0.0.1", port)

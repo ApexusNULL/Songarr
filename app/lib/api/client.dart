@@ -258,8 +258,19 @@ class SongarrApi {
   Future<LibraryInfo> setPlaylistOrder(List<String> ids) async =>
       _libraryInfo(await _send('PUT', '/library/order', {'playlist_ids': ids}));
 
-  static LibraryInfo _libraryInfo(Map<String, dynamic> j) => LibraryInfo((j['liked']['count'] as num).toInt(),
-      [for (final p in j['playlists'] as List) PlaylistSummary(p as Map<String, dynamic>)]);
+  static LibraryInfo _libraryInfo(Map<String, dynamic> j) => LibraryInfo.fromJson(j);
+
+  /// Whether the server can stream [trackId] (false: it doesn't have it, or not any more). Throws an
+  /// [ApiException] with `away` if no server answers.
+  Future<bool> canStream(String trackId) async {
+    try {
+      await _call((dio) => dio.head('/stream/$trackId'));
+      return true;
+    } on ApiException catch (e) {
+      if (e.away) rethrow;
+      return false;
+    }
+  }
 
   /// All your Liked Songs, in your order.
   Future<TrackPage> liked() => _whole('/library/liked');

@@ -59,6 +59,7 @@ class OfflineStore extends Notifier<OfflineState> {
   late Directory _downloadsDir;
   late Directory _episodesDir;
   late Directory _cacheDir;
+  late Directory _listsDir;
   bool _syncing = false;
   late File _scoresFile;
   final scores = ListenScores();
@@ -88,6 +89,7 @@ class OfflineStore extends Notifier<OfflineState> {
     _downloadsDir = Directory('${support.path}/downloads')..createSync(recursive: true);
     _episodesDir = Directory('${support.path}/episodes')..createSync(recursive: true);
     _cacheDir = Directory('${cache.path}/stream-cache')..createSync(recursive: true);
+    _listsDir = Directory('${support.path}/lists')..createSync(recursive: true);
     _scoresFile = File('${support.path}/listen_scores.json');
     if (_scoresFile.existsSync()) {
       try {
@@ -207,6 +209,43 @@ class OfflineStore extends Notifier<OfflineState> {
     }
   }
   String cachePath(Track t) => '${_cacheDir.path}/${t.id}.${t.format}';
+
+  /// Whether [t] is on this phone at all: a download, or a stream played to the end before (any
+  /// version of it: with no server to ask, that's what there is).
+  bool hasCopy(Track t) {
+    final d = state.downloads[t.id];
+    return (d != null && File(_downloadPath(d)).existsSync()) || File(cachePath(t)).existsSync();
+  }
+
+  // -- the lists, kept for when no server can be reached (see data.dart) ------------------------------
+
+  String _listPath(String key) => '${_listsDir.path}/${key.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}.json';
+
+  Future<void> keepList(String key, Map<String, dynamic> json) async {
+    await ready;
+    try {
+      final f = File(_listPath(key)), part = File('${_listPath(key)}.part');
+      await part.writeAsString(jsonEncode(json));
+      await part.rename(f.path);
+    } catch (_) {
+      // not kept this time; the copy before stays
+    }
+  }
+
+  Future<Map<String, dynamic>?> keptList(String key) async {
+    await ready;
+    try {
+      return jsonDecode(await File(_listPath(key)).readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// A kept [page] with the songs on this phone, each to play from what's here.
+  TrackPage onThisPhone(TrackPage page) {
+    final here = [for (final t in page.tracks) if (hasCopy(t)) Track({...t.json, 'size': null, 'playable': true})];
+    return TrackPage(total: here.length, tracks: here, info: {...page.info, 'offline': true, 'editable': false});
+  }
 
   /// Fetch [tracks] (the songs coming up next) into the listening cache, one at a time, so the
   /// phone has music in hand: if the server goes away (a backup server takes about a minute to
@@ -445,6 +484,10 @@ class OfflineStore extends Notifier<OfflineState> {
     state = state.copyWith(episodes: {});
     _saveEpisodeIndex();
     await clearCache();
+    try {
+      _listsDir.deleteSync(recursive: true);
+      _listsDir.createSync(recursive: true);
+    } catch (_) {}
   }
 }
 

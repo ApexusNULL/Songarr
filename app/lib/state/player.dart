@@ -41,12 +41,24 @@ class PlayerController {
     handler.onPause = () => jam != null ? jam!.setPlaying(false) : player.pause();
     handler.onSeek = seek;
     SharedPreferences.getInstance().then((p) => _podcastSpeed = p.getDouble('podcast_speed') ?? 1.0).catchError((_) => 1.0);
+    // How far into the song it got, for picking a dropped stream up there: sampled, because a song
+    // still streaming may not send its position along.
+    _heardTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!player.playing || player.processingState != ProcessingState.ready) return;
+      final p = player.position;
+      if (p > Duration.zero) _heard = (current?.id, p);
+    });
     _subs.addAll([
       player.currentIndexStream.listen(_onIndex),
       player.currentIndexStream.listen((_) => _currentChanges.add(current)),
       player.positionStream.listen((p) {
         if (player.currentIndex != _lastIndex) return;
         _lastPosition = p;
+        final trouble = _troubleId;
+        if (trouble != null && p - (current?.id == trouble ? _troubleAt : Duration.zero) > const Duration(seconds: 10)) {
+          _troubleId = null; // playing fine again (that song, or the next)
+          _retries = _failedInARow = 0;
+        }
         final t = current;
         if (t != null && t.isEpisode && !_previewing && (p - _lastSaved).abs() > const Duration(seconds: 30)) _saveEpisode(t, p);
         if (player.playing) _saveSessionSoon(); // every few seconds, so even a force-close loses little
@@ -65,9 +77,28 @@ class PlayerController {
       }),
       player.errorStream.listen((e) async {
         if (_previewing) return; // the preview sheet says there's no preview
+        final t = current, at = _heard.$1 == t?.id ? _heard.$2 : Duration.zero; // (the player's own position is 0 by now)
         if (await _tryOtherServer()) return; // its server went away and another took over: carry on there
         if (await _serverAway()) return _waitForServer(); // none answers yet: wait, don't skip through everything
+        // The server answers. A stream that dropped (a weak connection, its disk slow for a moment) is
+        // tried again from the same spot; only a song the server doesn't have is skipped.
+        if (t?.id != _troubleId) _retries = 0;
+        _troubleId = t?.id;
+        _troubleAt = at;
+        if (t != null && _retries < 2 && await _stillThere(t)) {
+          _retries++;
+          await Future<void>.delayed(Duration(seconds: 2 * _retries));
+          if (current?.id == t.id) await _reloadQueue(at: at);
+          return;
+        }
+        _retries = 0;
         _messages.add('Couldn\'t play this song (${e.message ?? 'error ${e.code}'}).');
+        if (++_failedInARow >= 3) { // never skip through the whole queue: something's wrong all round
+          _failedInARow = 0;
+          await player.pause();
+          _messages.add('Several songs in a row wouldn\'t play, so it stopped. Check your connection, then press play.');
+          return;
+        }
         if (player.hasNext) player.seekToNext();
       }),
     ]);
@@ -166,6 +197,24 @@ class PlayerController {
 
   bool _switching = false;
   Timer? _retry;
+  int _retries = 0; // the song playing was tried again this many times
+  int _failedInARow = 0; // songs skipped because they wouldn't play, one after another
+  String? _troubleId; // the last song that went wrong
+  Duration _troubleAt = Duration.zero; // and where
+  (String?, Duration) _heard = (null, Duration.zero); // how far into which song it got (a dropped stream picks up there)
+  Timer? _heardTimer;
+
+  /// Is [t] still there to play (on this phone, or on the server)? When that can't be told, yes.
+  Future<bool> _stillThere(Track t) async {
+    if (t.isEpisode || _offline.localFile(t) != null) return true;
+    final api = ref.read(apiProvider);
+    if (api == null) return false;
+    try {
+      return await api.canStream(t.id);
+    } catch (_) {
+      return true; // can't tell (the connection again): worth another try
+    }
+  }
 
   /// The server stopped answering mid-song. If another of the family's servers is active now, the
   /// queue carries on there from the same spot. False when there's no other server to go to.
@@ -184,9 +233,10 @@ class PlayerController {
     }
   }
 
-  /// The queue's songs again, from whichever server is in use now, carrying on from the same spot.
-  Future<void> _reloadQueue() async {
-    final index = player.currentIndex ?? 0, position = player.position, shuffled = player.shuffleModeEnabled;
+  /// The queue's songs again, from whichever server is in use now, carrying on from the same spot
+  /// (or from [at] in the song playing).
+  Future<void> _reloadQueue({Duration? at}) async {
+    final index = player.currentIndex ?? 0, position = at ?? player.position, shuffled = player.shuffleModeEnabled;
     await player.setAudioSources([for (final t in _queue) _source(t)], initialIndex: index, initialPosition: position);
     await player.setShuffleModeEnabled(shuffled);
     unawaited(player.play());
@@ -250,6 +300,9 @@ class PlayerController {
     }
     if (usable.isEmpty) return;
     if (start >= usable.length) start = 0;
+    _retries = _failedInARow = 0;
+    _troubleId = null;
+    _heard = (null, Duration.zero);
     _previewing = false; // choosing music ends any preview for good
     _beforePreview = null;
     if (shuffle && index == 0) start = Random().nextInt(usable.length);
@@ -599,6 +652,7 @@ class PlayerController {
     for (final s in _subs) {
       s.cancel();
     }
+    _heardTimer?.cancel();
     likes.dispose(); // the player belongs to the media session and lives as long as the app
     _messages.close();
     _queueChanges.close();

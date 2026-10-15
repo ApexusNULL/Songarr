@@ -404,6 +404,7 @@ class AppAPITests(unittest.TestCase):
     def test_missing_file_is_downloaded_again(self):
         t = spotify_track(9)
         self.svc.db.upsert_tracks([t])
+        self.svc.db.set_setting("library_root", str(self.dir))  # (there: it's the file that's gone)
         self.svc.db.set_status(t["id"], "downloaded", file_path=str(self.dir / "gone.m4a"))
         self.assertEqual(self.get(f"/api/v1/stream/{t['id']}")[0], 404)
         self.assertEqual(self.svc.db.one("SELECT status FROM tracks WHERE id = ?", (t["id"],))[0], "wanted")

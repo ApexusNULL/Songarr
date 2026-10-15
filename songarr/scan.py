@@ -168,6 +168,11 @@ class Scanner:
                 gone = set(known) - set(seen)
                 with self.db.tx() as c:
                     c.executemany("DELETE FROM library_files WHERE path = ?", [(p,) for p in gone])
+                    # songs whose file changed since they were downloaded (tags edited, say): the apps tell a
+                    # newer version by its size, so it must be the file's
+                    c.execute("""UPDATE tracks SET file_size = (SELECT size FROM library_files f WHERE f.path = tracks.file_path)
+                                 WHERE status = 'downloaded' AND file_path IN (SELECT path FROM library_files)
+                                 AND file_size IS NOT (SELECT size FROM library_files f WHERE f.path = tracks.file_path)""")
                 self.state["found"] = self.match_waiting()
                 if self.state["found"]:
                     self.db.log("imported", f"Found {self.state['found']:,} song{'s' if self.state['found'] != 1 else ''} "

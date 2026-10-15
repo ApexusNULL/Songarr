@@ -1312,14 +1312,18 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
                     self.wfile.write(chunk)
 
         def stream(self, tid: str) -> None:
-            row = svc.db.one("SELECT file_path, status, pinned FROM tracks WHERE id = ?", (tid,))
+            row = svc.db.one("SELECT file_path, file_size, status, pinned FROM tracks WHERE id = ?", (tid,))
             if row is None or not has_file(row):
                 return self.send_json(404, {"error": "That song isn't downloaded yet."})
             path = Path(row["file_path"])
-            if not path.is_file():  # file deleted or moved: download it again
-                svc.db.set_status(tid, "wanted", file_path=None, error="File was missing; downloading again")
+            if not path.is_file():
+                if not Path(svc.db.setting("library_root") or "").is_dir():  # (a network drive away for a moment)
+                    return self.send_json(503, {"error": "The music folder can't be reached right now. Try again in a moment."})
+                svc.db.set_status(tid, "wanted", file_path=None, error="File was missing; downloading again")  # deleted or moved
                 svc.wake.set()
                 return self.send_json(404, {"error": "The file went missing; it's being downloaded again."})
+            if (size := path.stat().st_size) != row["file_size"]:  # changed since (its tags edited, say)
+                svc.db.run("UPDATE tracks SET file_size = ? WHERE id = ?", (size, tid))
             self.send_file(path)
 
         def send_file(self, path: Path, headers: dict | None = None) -> None:

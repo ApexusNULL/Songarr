@@ -165,7 +165,10 @@ takes over within about a minute of the active server stopping, so keep a few so
   `Content-Range`, so seeking works. An unsatisfiable range gives `416`.
 - `ETag`: send `If-None-Match` to get `304` when your cached copy is current.
 - `404` if the song isn't downloaded yet. If its file went missing on the server, Songarr
-  starts downloading it again.
+  starts downloading it again. `503` while the music folder can't be reached (a network drive
+  away for a moment): try again shortly.
+- The song's `size` (in its track) is the file's: when it changes, the server has another version
+  (replaced, or its tags edited), and a copy kept on the phone should be fetched again.
 
 **Cache files exactly as received.** They're already compressed (AAC/Opus). Compressing them
 again losslessly saves about 1%, and converting to FLAC makes them 5 to 8 times bigger with no
