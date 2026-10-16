@@ -472,6 +472,10 @@ class PlayerController {
   final smartShuffle = ValueNotifier<bool>(false);
   static const smartEvery = 2; // one song in three is a suggestion
   String? _listKey; // the list the queue came from (`liked`, or a playlist id), when it's one
+  String? get listKey => _listKey;
+
+  /// The list (`liked`, or a playlist id) [t] is playing from, when it's one of that list's songs.
+  String? listOf(Track t) => _listKey != null && _ownList.any((x) => x.id == t.id) ? _listKey : null;
   List<Track> _ownList = const []; // that list's songs, as it showed them
   bool _toppingUp = false;
 

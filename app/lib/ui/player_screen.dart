@@ -160,7 +160,7 @@ class _TopBar extends ConsumerWidget {
         if (onQueue != null)
           GlassIconButton(icon: Icons.queue_music_rounded, tooltip: 'Queue', onPressed: onQueue)
         else if (t != null)
-          GlassIconButton(icon: Icons.more_horiz_rounded, tooltip: 'More', onPressed: () => showTrackMenu(context, ref, t))
+          GlassIconButton(icon: Icons.more_horiz_rounded, tooltip: 'More', onPressed: () => showTrackMenu(context, ref, t, fromList: ref.read(playerProvider).listOf(t)))
         else
           const SizedBox(width: 42),
       ]),
@@ -257,6 +257,12 @@ class _NowPlaying extends ConsumerWidget {
                     ),
                   ),
                 ),
+                if (!t.isPreview)
+                  IconButton(
+                    tooltip: 'More',
+                    icon: const Icon(Icons.more_horiz_rounded, color: Colors.white70),
+                    onPressed: () => showTrackMenu(context, ref, t, fromList: c.listOf(t)),
+                  ),
                 if (!t.isEpisode && !t.isPreview)
                   ValueListenableBuilder<Map<String, bool>>(
                     valueListenable: c.likes,

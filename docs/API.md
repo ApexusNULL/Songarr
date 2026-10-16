@@ -75,7 +75,7 @@ Only `playable` songs can be streamed. Cover URLs are public CDN images, so load
 | `GET /lyrics/{track_id}` | `{synced: [{t: ms, text}] or null, plain, instrumental, source}` from LRCLIB; `404` when there are none; `429` while LRCLIB is busy (try again in a minute: nothing is remembered as "none") |
 | `GET /artist?name=` | `{name, tracks (on the server, most played first), albums, about: artist or null, popular: [chart entry with in_library/status], related: [artist]}` (`about`/`popular`/`related` come from Deezer and are empty when it's unreachable). `deezer_id` (null when Deezer doesn't know them) and `following` are for the Follow button |
 | `GET /library` | `{liked: {count}, playlists: [{id, name, kind: "app", owner, image_url, count, editable, from_spotify}]}`, in your order (see below; by default most recently changed first). `from_spotify: true` for one brought over from Spotify (an ordinary playlist of yours all the same); `GET /playlists/{spotify id}` opens it |
-| `POST /library/liked/move` `{from, to, track_id}` | `{ok}`. Moves a song within your Liked Songs (409 if the list changed meanwhile) |
+| `POST /library/liked/move` `{from, to, track_id}` | `{ok}`. Moves a song within your Liked Songs (409 if the list changed meanwhile). Without `from`, the song `track_id` moves from wherever it is (404 if it isn't there) |
 | `PUT /library/order` `{playlist_ids: [...]}` | the library, with playlists in that order (your own arrangement; ids you don't have are ignored). Playlists not in it, like new ones, are listed first |
 | `GET /library/liked?offset=&limit=` | `{total, offset, tracks}` (up to 500 per page), newest like first, or in your order once you've moved something (songs liked since then come first). Each track also has `added_at` (when it was liked, Unix seconds) |
 | `GET /playlists/{id}?offset=&limit=` | `{id, name, kind, editable, owner, image_url, total, offset, tracks}`; each track also has `added_at` (when it was added to the playlist, Unix seconds) |
@@ -84,7 +84,7 @@ Only `playable` songs can be streamed. Cover URLs are public CDN images, so load
 | `DELETE /playlists/{id}` | `{ok}` |
 | `POST /playlists/{id}/tracks` `{track_ids: [...]}` | `{added}`; appends; unknown IDs are skipped |
 | `DELETE /playlists/{id}/tracks/{position}` | `{ok}`; later positions shift up |
-| `POST /playlists/{id}/tracks/move` `{from, to, track_id}` | `{ok}`. Moves the song at `from` to `to`. `track_id` is the song you mean: if the playlist changed meanwhile, nothing moves (409) |
+| `POST /playlists/{id}/tracks/move` `{from, to, track_id}` | `{ok}`. Moves the song at `from` to `to`. `track_id` is the song you mean: if the playlist changed meanwhile, nothing moves (409). Without `from`, the song `track_id` moves from wherever it is (404 if it isn't there): Now Playing's **Move to the top** |
 | `PUT /likes/{track_id}` | `{liked: true}` |
 | `DELETE /likes/{track_id}` | `{liked: false, on_spotify: false}` (`on_spotify` is always false: apps up to 1.8 expect it) |
 | `POST /plays` `{track_id, ms_played, completed}` | `{ok}`. Send when a song ends or is skipped; feeds Home |

@@ -528,6 +528,9 @@ deletes song files on its own: when someone unlikes a song, it only leaves *thei
   good, moved into the music folder, as soon as anyone likes it, adds it to a playlist or requests it, or
   once it's been played to the end 4 times by 2 people or more, more often than skipped. Otherwise it's
   removed after 30 days and isn't tried again. History says which stayed and why.
+- **Move to the top:** a song's menu (⋯) in a playlist or Liked Songs, or in Now Playing for the list
+  it's playing from, puts it first; **Move in this playlist** (and Library → **Arrange**) have a ⤒ button
+  on every song (and playlist) too.
 - **Now Playing:** tap the artist under the title to open their page (with several artists, pick one).
 - **Jams:** in Now Playing tap the **people** button (or **Start a Jam with this** on a song) and
   pick who to invite. Everyone hears the same moment; anyone can play, pause, skip or add songs.

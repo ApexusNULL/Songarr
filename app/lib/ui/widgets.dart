@@ -377,8 +377,9 @@ class TrackTile extends ConsumerWidget {
 }
 
 /// [list]: the list the song is shown in, so a Jam started from it plays on through that list.
+/// [fromList]: the list ([PlayerController.listOf]) the song is playing from, in Now Playing.
 Future<void> showTrackMenu(BuildContext context, WidgetRef ref, Track track,
-    {String? playlistId, int? position, List<Track>? list, bool inLiked = false}) async {
+    {String? playlistId, int? position, List<Track>? list, bool inLiked = false, String? fromList}) async {
   if (track.isPreview) return;
   final player = ref.read(playerProvider);
   final offline = ref.read(offlineProvider.notifier);
@@ -416,6 +417,16 @@ Future<void> showTrackMenu(BuildContext context, WidgetRef ref, Track track,
             item(Icons.thumb_down_alt_outlined, 'Not for me', () {
               Navigator.pop(sheet);
               player.notForMe(track);
+            }),
+          if ((inLiked || playlistId != null) && position != null && position > 0)
+            item(Icons.vertical_align_top_rounded, inLiked ? 'Move to the top of Liked Songs' : 'Move to the top of this playlist', () {
+              Navigator.pop(sheet);
+              _moveToTop(context, ref, inLiked ? 'liked' : playlistId!, track, from: position);
+            }),
+          if (fromList != null && !track.suggested && !track.isEpisode && !track.isPreview)
+            item(Icons.vertical_align_top_rounded, fromList == 'liked' ? 'Move to the top of Liked Songs' : 'Move to the top of the playlist', () {
+              Navigator.pop(sheet);
+              _moveToTop(context, ref, fromList, track);
             }),
           if (inLiked && position != null && list != null && list.length > 1)
             item(Icons.swap_vert_rounded, 'Move in Liked Songs', () {
@@ -542,6 +553,21 @@ Future<void> addToPlaylistDialog(BuildContext context, WidgetRef ref, List<Track
   await api.addToPlaylist(id, [for (final t in tracks) t.id]);
   ref.refreshLibrary();
   if (context.mounted) toast(context, tracks.length == 1 ? 'Added to playlist' : 'Added ${tracks.length} songs');
+}
+
+/// [track] to the top of [list] (`liked`, or a playlist id); [from]: where it is, when known.
+Future<void> _moveToTop(BuildContext context, WidgetRef ref, String list, Track track, {int? from}) async {
+  final api = ref.read(apiProvider);
+  if (api == null) return;
+  try {
+    await (from != null
+        ? (list == 'liked' ? api.moveInLiked(from, 0, track.id) : api.moveInPlaylist(list, from, 0, track.id))
+        : api.moveToTop(list, track.id));
+    ref.refreshLibrary();
+    if (context.mounted) toast(context, list == 'liked' ? 'Moved to the top of Liked Songs' : 'Moved to the top of the playlist');
+  } on ApiException catch (e) {
+    if (context.mounted) toast(context, e.message);
+  }
 }
 
 Future<String?> askText(BuildContext context, String title, String hint, {String initial = ''}) {

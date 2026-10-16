@@ -289,6 +289,11 @@ class AppAPITests(unittest.TestCase):
         self.assertEqual((st, liked()), (200, [before[1], before[0]]))
         self.assertEqual(self.call(self.token, "POST", "/api/v1/library/liked/move", {"from": 1, "to": 0, "track_id": before[1]})[0], 409)
         self.assertEqual(self.call(self.token, "POST", "/api/v1/library/liked/move", {"from": 0, "to": 5})[0], 400)
+        # to the top by the song alone (Now Playing knows the song, not where it is)
+        st, _, _ = self.call(self.token, "POST", "/api/v1/library/liked/move", {"to": 0, "track_id": before[0]})
+        self.assertEqual((st, liked()), (200, [before[0], before[1]]))
+        self.assertEqual(self.call(self.token, "POST", "/api/v1/library/liked/move", {"to": 0, "track_id": "notliked"})[0], 404)
+        self.call(self.token, "POST", "/api/v1/library/liked/move", {"to": 0, "track_id": before[1]})
         # a new like goes first, ahead of the arrangement
         new = f"{3:022d}"
         self.call(self.token, "PUT", f"/api/v1/likes/{new}")
@@ -308,6 +313,9 @@ class AppAPITests(unittest.TestCase):
         self.assertEqual(st, 409)  # that's not where it is any more: nothing moves
         self.assertEqual(order(), [ids[2], ids[0], ids[1]])
         self.assertEqual(self.call(self.kid_token, "POST", f"/api/v1/playlists/{pid}/tracks/move", {"from": 0, "to": 9})[0], 400)
+        st, _, _ = self.call(self.kid_token, "POST", f"/api/v1/playlists/{pid}/tracks/move", {"to": 0, "track_id": ids[1]})
+        self.assertEqual((st, order()), (200, [ids[1], ids[2], ids[0]]))  # by the song alone
+        self.assertEqual(self.call(self.kid_token, "POST", f"/api/v1/playlists/{pid}/tracks/move", {"to": 0, "track_id": "nope"})[0], 404)
         self.assertEqual(self.call(self.token, "POST", f"/api/v1/playlists/{pid}/tracks/move", {"from": 0, "to": 1})[0], 404)  # not yours (and not told it exists)
         self.call(self.kid_token, "DELETE", f"/api/v1/playlists/{pid}")
 

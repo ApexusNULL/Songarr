@@ -435,7 +435,7 @@ class AppAPI:
         mean: if the list changed meanwhile, nothing moves (409)."""
         uid = user["id"]
         ids = self.db.liked_list(uid)
-        src, dst = _int(body.get("from"), -1, -1, 10**6), _int(body.get("to"), -1, -1, 10**6)
+        src, dst = self._from(body, ids), _int(body.get("to"), -1, -1, 10**6)
         if not (0 <= src < len(ids) and 0 <= dst < len(ids)):
             raise ApiError(400, "There's no song at that position.")
         if body.get("track_id") is not None and ids[src] != str(body["track_id"]):
@@ -446,6 +446,17 @@ class AppAPI:
             c.executemany("INSERT INTO liked_order(user_id, track_id, position) VALUES (?, ?, ?)",
                           [(uid, tid, n) for n, tid in enumerate(ids)])
         return {"ok": True}
+
+    @staticmethod
+    def _from(body: dict, ids: list[str]) -> int:
+        """Where the song to move is: `from`, or without it wherever `track_id` is (Now Playing knows
+        the song, not its place)."""
+        if body.get("from") is None and body.get("track_id") is not None:
+            try:
+                return ids.index(str(body["track_id"]))
+            except ValueError:
+                raise ApiError(404, "That song isn't in this list any more.") from None
+        return _int(body.get("from"), -1, -1, 10**6)
 
     def _playlist_access(self, uid: int, pid: str) -> str:
         if self.db.one("SELECT 1 FROM user_playlists WHERE id = ? AND user_id = ?", (pid, uid)):
@@ -537,10 +548,11 @@ class AppAPI:
         `track_id` is the song you mean to move: if the playlist changed meanwhile (on another
         device), nothing moves and you get 409."""
         self._own_playlist(user, pid)
-        src, dst = _int(body.get("from"), -1, -1, 10**6), _int(body.get("to"), -1, -1, 10**6)
+        dst = _int(body.get("to"), -1, -1, 10**6)
         with self.db.tx() as c:
             rows = [tuple(r) for r in c.execute(
                 "SELECT track_id, added_at FROM user_playlist_tracks WHERE playlist_id = ? ORDER BY position", (pid,))]
+            src = self._from(body, [r[0] for r in rows])
             if not (0 <= src < len(rows) and 0 <= dst < len(rows)):
                 raise ApiError(400, "There's no song at that position.")
             if body.get("track_id") is not None and rows[src][0] != str(body["track_id"]):

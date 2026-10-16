@@ -301,6 +301,11 @@ class SongarrApi {
   Future<void> moveInPlaylist(String id, int from, int to, String trackId) =>
       _send('POST', '/playlists/$id/tracks/move', {'from': from, 'to': to, 'track_id': trackId});
 
+  /// [trackId] to the top of [list] (`liked`, or a playlist id), wherever it is in it.
+  Future<void> moveToTop(String list, String trackId) => list == 'liked'
+      ? _send('POST', '/library/liked/move', {'to': 0, 'track_id': trackId})
+      : _send('POST', '/playlists/$list/tracks/move', {'to': 0, 'track_id': trackId});
+
   Future<TrackPage> createPlaylist(String name) async => TrackPage.fromJson(await _send('POST', '/playlists', {'name': name}));
   Future<void> renamePlaylist(String id, String name) => _send('PATCH', '/playlists/$id', {'name': name});
   Future<void> deletePlaylist(String id) => _send('DELETE', '/playlists/$id');
