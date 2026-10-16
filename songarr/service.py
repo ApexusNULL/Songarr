@@ -29,6 +29,7 @@ from .push import Push
 from .podcast_downloads import PodcastDownloads
 from .podcasts import Podcasts
 from .recommend import Recommender
+from .smartshuffle import SmartShuffle, trial_root
 from .users import Users
 from .verify import YouTubeSignIn
 from .youtube import FORMATS, Blocked, NeedsSignIn, Unavailable, YouTube, find_ffmpeg
@@ -109,6 +110,7 @@ class Service:
         self.restart_hook: Callable[[], None] | None = None  # set by __main__: restart Songarr
         self.push = Push(self.db, self.data_dir)
         self.recommender = Recommender(self)
+        self.smart_shuffle = SmartShuffle(self)  # songs you're likely to love next, and songs on trial
         self.youtube_signin = YouTubeSignIn(self.data_dir)
         self.youtube_factory = youtube_factory or self._default_youtube
         self.active: dict[str, dict] = {}
@@ -142,7 +144,8 @@ class Service:
                         threading.Thread(target=self.artist_info.run, name="artist-info", daemon=True),
                         threading.Thread(target=self.dependencies.run, name="dependencies", daemon=True),
                         threading.Thread(target=self.scanner.run, name="music-scan", daemon=True),
-                        threading.Thread(target=self.releases.run, name="releases", daemon=True)]
+                        threading.Thread(target=self.releases.run, name="releases", daemon=True),
+                        threading.Thread(target=self.smart_shuffle.run, name="smart-shuffle", daemon=True)]
         for t in self.threads:
             t.start()
 
@@ -161,6 +164,7 @@ class Service:
         self.dependencies.wake.set()
         self.scanner.wake.set()
         self.releases.wake.set()
+        self.smart_shuffle.wake.set()
         if wait:
             for t in getattr(self, "threads", []):
                 t.join(timeout=15)
@@ -321,7 +325,8 @@ class Service:
         tid = t["id"]
         fmt = s["audio_format"] if s["audio_format"] in FORMATS else "m4a"
         ext = FORMATS[fmt][1]
-        dest = library.target_path(s["library_root"], t, ext)
+        # (a song on trial goes to the trial folder until it's kept: smartshuffle.py)
+        dest = library.target_path(trial_root(s["library_root"]) if t.get("trial") == 1 else s["library_root"], t, ext)
         picked = bool(t.get("pinned") and t.get("youtube_id"))  # a version chosen by hand: download it, whatever's on disk
 
         if not picked and dest.exists() and tagging.read_spotify_id(dest) == tid:  # already on disk (e.g. DB was reset)

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../state/data.dart';
+import '../state/list_sort.dart';
 import '../state/offline.dart';
 import '../state/player.dart';
 import '../state/session.dart';
@@ -56,6 +57,8 @@ class TrackListScreen extends ConsumerWidget {
         };
     final page = value.value;
     final editable = _kind == _Kind.playlist && page != null && page.editable;
+    final sortKey = switch (_kind) { _Kind.playlist => 'playlist_$id', _Kind.liked => 'liked', _ => null };
+    final sort = sortKey == null ? ListSort.none : ref.watch(listSortsProvider)[sortKey] ?? ListSort.none;
     return Scaffold(
       body: Stack(children: [
         RefreshIndicator(
@@ -63,7 +66,7 @@ class TrackListScreen extends ConsumerWidget {
           backgroundColor: surface,
           onRefresh: () async => refresh(),
           child: value.when(
-            data: (page) => _body(context, ref, page, offline),
+            data: (page) => _body(context, ref, page, offline, sortKey, sort),
             loading: () => ListView(children: [_header(context, ref, null, offline), const ListSkeleton()]),
             error: (e, _) => ListView(children: [_header(context, ref, null, offline), ErrorView(e, onRetry: refresh)]),
           ),
@@ -198,13 +201,21 @@ class TrackListScreen extends ConsumerWidget {
                       },
                     ),
                   const SizedBox(width: 18),
-                  AuroraPlayButton(playing: false, size: 64, onPressed: tracks.isEmpty ? null : () => player.play(tracks)),
+                  AuroraPlayButton(playing: false, size: 64, onPressed: tracks.isEmpty ? null : () => player.play(tracks, listKey: _listKey)),
                   const SizedBox(width: 18),
                   GlassIconButton(
                     tooltip: 'Shuffle',
                     icon: Icons.shuffle_rounded,
-                    onPressed: tracks.isEmpty ? null : () => player.play(tracks, shuffle: true),
+                    onPressed: tracks.isEmpty ? null : () => player.play(tracks, shuffle: true, listKey: _listKey),
                   ),
+                  if (_listKey != null && page?.offline != true) ...[
+                    const SizedBox(width: 18),
+                    GlassIconButton(
+                      tooltip: 'Smart Shuffle: with songs you\'re likely to love next',
+                      icon: Icons.auto_awesome_rounded,
+                      onPressed: tracks.isEmpty ? null : () => player.playSmart(tracks, _listKey!),
+                    ),
+                  ],
                 ]),
               ),
             ]),
@@ -214,12 +225,28 @@ class TrackListScreen extends ConsumerWidget {
     );
   }
 
-  Widget _body(BuildContext context, WidgetRef ref, TrackPage page, OfflineState offline) {
-    final tracks = page.tracks;
+  Widget _body(BuildContext context, WidgetRef ref, TrackPage page, OfflineState offline, String? sortKey, ListSort sort) {
+    // Shown (and played) in the order chosen; moving a song, or taking it out, goes by its place in the list itself.
+    final order = sortedOrder(page.tracks, sort);
+    final tracks = [for (final i in order) page.tracks[i]];
     final player = ref.read(playerProvider);
     final editable = _kind == _Kind.playlist && page.editable;
     return CustomScrollView(slivers: [
-      SliverToBoxAdapter(child: _header(context, ref, page, offline)),
+      SliverToBoxAdapter(child: _header(context, ref, TrackPage(total: page.total, tracks: tracks, info: page.info), offline)),
+      if (sortKey != null && page.tracks.length > 1)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 16, 2),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _chooseSort(context, ref, sortKey, sort, page.tracks),
+                icon: const Icon(Icons.sort_rounded, size: 18),
+                label: Text(sort.by == SortBy.custom ? sort.by.label : '${sort.by.label} · ${sort.direction}'),
+              ),
+            ),
+          ),
+        ),
       if (tracks.isEmpty)
         SliverToBoxAdapter(
           child: Padding(
@@ -239,16 +266,56 @@ class TrackListScreen extends ConsumerWidget {
             number: tracks[i].trackNumber ?? i + 1,
             showCover: _kind != _Kind.album,
             playlistId: editable ? id : null,
-            position: editable || _kind == _Kind.liked ? i : null,
+            position: editable || _kind == _Kind.liked ? order[i] : null,
             inLiked: _kind == _Kind.liked,
-            list: tracks,
-            onTap: () => player.play(tracks, index: i),
+            list: page.tracks,
+            onTap: () => player.play(tracks, index: i, listKey: _listKey),
           );
           return i < 14 ? FadeSlideIn(index: i, child: tile) : tile;
         },
       ),
       const SliverToBoxAdapter(child: SizedBox(height: 190)),
     ]);
+  }
+
+  /// What Smart Shuffle knows this list as (a playlist or Liked Songs; not albums or downloads).
+  String? get _listKey => switch (_kind) { _Kind.playlist => id, _Kind.liked => 'liked', _ => null };
+
+  /// Sort by: tap another to sort by it, the one in use to turn it round.
+  Future<void> _chooseSort(BuildContext context, WidgetRef ref, String key, ListSort current, List<Track> tracks) {
+    final options = [
+      for (final by in SortBy.values)
+        if (by != SortBy.added || tracks.any((t) => t.addedAt != null)) by, // (a server from before it said when)
+    ];
+    return showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true, // above the mini player and tabs
+      isScrollControlled: true, // as tall as its options (and scrolls on a small screen)
+      builder: (sheet) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
+              child: Align(alignment: Alignment.centerLeft, child: Text('Sort by', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
+            ),
+            for (final by in options)
+              ListTile(
+                title: Text(by.label, style: TextStyle(fontWeight: by == current.by ? FontWeight.w700 : null)),
+                subtitle: by == current.by && by != SortBy.custom ? Text('${current.direction} · tap to turn it round') : null,
+                trailing: by != current.by
+                    ? null
+                    : Icon(by == SortBy.custom ? Icons.check_rounded : Icons.swap_vert_rounded, color: accent),
+                onTap: () {
+                  Navigator.pop(sheet);
+                  ref.read(listSortsProvider.notifier).choose(key,
+                      by != current.by ? ListSort(by) : ListSort(by, reversed: by != SortBy.custom && !current.reversed));
+                },
+              ),
+            const SizedBox(height: 8),
+          ]),
+        ),
+      ),
+    );
   }
 
   Future<void> _editPlaylist(BuildContext context, WidgetRef ref, String action, String name) async {

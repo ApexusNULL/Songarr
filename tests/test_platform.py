@@ -427,6 +427,9 @@ class AppAPITests(unittest.TestCase):
         self.call(self.token, "POST", f"/api/v1/playlists/{pid}/tracks", {"track_ids": [f"{1:022d}", f"{3:022d}", "nope"]})
         got = self.get(f"/api/v1/playlists/{pid}")[1]
         self.assertEqual([t["id"] for t in got["tracks"]], [f"{1:022d}", f"{3:022d}"])
+        self.assertTrue(all(abs(t["added_at"] - time.time()) < 60 for t in got["tracks"]))  # when each was added (to sort by)
+        liked = self.get("/api/v1/library/liked")[1]["tracks"]
+        self.assertTrue(liked and all(isinstance(t["added_at"], (int, float)) for t in liked))
         self.call(self.token, "DELETE", f"/api/v1/playlists/{pid}/tracks/0")
         self.assertEqual([t["id"] for t in self.get(f"/api/v1/playlists/{pid}")[1]["tracks"]], [f"{3:022d}"])
         self.assertEqual(self.call(self.token, "PATCH", f"/api/v1/playlists/{pid}", {"name": "Gym 2"})[1]["name"], "Gym 2")
@@ -552,6 +555,31 @@ class AppAPITests(unittest.TestCase):
                     self.fail(f"Content-Length {length}: the connection was left open")
             self.assertLessEqual(got.count(b"HTTP/1."), 1, length)
             self.assertNotIn(b" 401 ", got, length)
+
+    def test_requests_sent_in_chunks(self):
+        # (Cloudflare's tunnel passes some requests on that way: a like, which has no body at all)
+        import http.client
+        import socket
+
+        def send(method, path, chunks):
+            c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+            try:
+                c.request(method, path, body=iter(chunks), encode_chunked=True,
+                          headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"})
+                r = c.getresponse()
+                return r.status, json.loads(r.read() or b"{}")
+            finally:
+                c.close()
+        tid = f"{3:022d}"
+        self.assertEqual(send("PUT", f"/api/v1/likes/{tid}", []), (200, {"liked": True}))
+        status, pl = send("POST", "/api/v1/playlists", [b'{"name": ', b'"Chunked"}'])
+        self.assertEqual((status, pl["name"]), (200, "Chunked"))
+        self.call(self.token, "DELETE", f"/api/v1/playlists/{pl['id']}")
+        self.call(self.token, "DELETE", f"/api/v1/likes/{tid}")
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5) as s:  # not chunks at all
+            s.sendall(b"PUT /api/v1/likes/" + tid.encode() + b" HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer "
+                      + self.token.encode() + b"\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n")
+            self.assertIn(b" 400 ", s.recv(65536).split(b"\r\n")[0])
 
     def test_background_polls_dont_count_as_someone_listening(self):
         self.svc.last_app_request = 0.0

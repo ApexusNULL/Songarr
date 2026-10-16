@@ -277,7 +277,8 @@ class PlayerController {
   /// Replace the queue with [tracks] and start at [index] (or a random song when shuffling).
   /// Songs that can't play yet (not downloaded to the server, not on this device) are skipped.
   /// An episode starts where you left off.
-  Future<void> play(List<Track> tracks, {int index = 0, bool shuffle = false}) async {
+  Future<void> play(List<Track> tracks, {int index = 0, bool shuffle = false, String? listKey}) async {
+    _noteSkip();
     if (jam != null) {
       // In a Jam, picking music changes it for everyone.
       final usable = [for (final t in tracks) if (canPlay(t)) t];
@@ -303,6 +304,9 @@ class PlayerController {
     _retries = _failedInARow = 0;
     _troubleId = null;
     _heard = (null, Duration.zero);
+    _listKey = listKey;
+    _ownList = listKey == null ? const [] : usable;
+    smartShuffle.value = false;
     _previewing = false; // choosing music ends any preview for good
     _beforePreview = null;
     if (shuffle && index == 0) start = Random().nextInt(usable.length);
@@ -404,7 +408,11 @@ class PlayerController {
   Future<void> seek(Duration position) => jam != null ? jam!.seekTo(position) : player.seek(position);
 
   /// Play queue item [index] from the start.
-  Future<void> jumpTo(int index) => jam != null ? jam!.jumpTo(index) : player.seek(Duration.zero, index: index);
+  Future<void> jumpTo(int index) async {
+    if (jam != null) return jam!.jumpTo(index);
+    if (index != player.currentIndex) _noteSkip();
+    await player.seek(Duration.zero, index: index);
+  }
 
   /// Podcasts: jump back or ahead within the episode.
   Future<void> skipBy(Duration d) async {
@@ -431,6 +439,7 @@ class PlayerController {
 
   Future<void> next() async {
     if (jam != null) return jam!.skip(1);
+    _noteSkip();
     if (player.hasNext) await player.seekToNext();
   }
 
@@ -446,11 +455,144 @@ class PlayerController {
     }
   }
 
+  /// Off, shuffle, then (for a playlist or Liked Songs) Smart Shuffle, then off again.
   Future<void> toggleShuffle() async {
     if (jam != null) return;
+    if (smartShuffle.value) return _smartOff();
     final on = !player.shuffleModeEnabled;
+    if (!on && _listKey != null && _ownList.isNotEmpty) return _smartOn();
     if (on) await player.shuffle();
     await player.setShuffleModeEnabled(on);
+  }
+
+  // -- Smart Shuffle ---------------------------------------------------------------------------
+
+  /// Shuffling with Smart Shuffle: after every [smartEvery] of the list's songs, one you're likely to
+  /// love next (marked `suggested`, with why).
+  final smartShuffle = ValueNotifier<bool>(false);
+  static const smartEvery = 2; // one song in three is a suggestion
+  String? _listKey; // the list the queue came from (`liked`, or a playlist id), when it's one
+  List<Track> _ownList = const []; // that list's songs, as it showed them
+  bool _toppingUp = false;
+
+  /// Shuffle [tracks] (the list [listKey]) with suggestions mixed in.
+  Future<void> playSmart(List<Track> tracks, String listKey) async {
+    if (jam != null) return play(tracks, shuffle: true);
+    final own = [for (final t in tracks) if (canPlay(t)) t];
+    if (own.isEmpty) return;
+    final picks = await _suggestions(listKey, _wanted(own.length));
+    if (picks.isEmpty) _messages.add('No suggestions right now: shuffling as usual.');
+    await play(_mix([...own]..shuffle(), picks), listKey: listKey);
+    _ownList = own;
+    smartShuffle.value = picks.isNotEmpty;
+  }
+
+  static int _wanted(int own) => (own / smartEvery).ceil().clamp(1, 20);
+
+  Future<List<Track>> _suggestions(String listKey, int n, {List<String> not = const []}) async {
+    final api = ref.read(apiProvider);
+    if (api == null) return const [];
+    try {
+      return await api.smartShuffle(listKey, n: n, not: not);
+    } catch (_) {
+      return const []; // no server to ask: the list's own songs then
+    }
+  }
+
+  /// [own] with one of [picks] after every [smartEvery] of them.
+  static List<Track> _mix(List<Track> own, List<Track> picks) {
+    final out = <Track>[];
+    var p = 0;
+    for (var i = 0; i < own.length; i++) {
+      out.add(own[i]);
+      if ((i + 1) % smartEvery == 0 && p < picks.length) out.add(picks[p++]);
+    }
+    return out;
+  }
+
+  Future<void> _smartOn() async {
+    final t = current, key = _listKey;
+    if (t == null || key == null) return;
+    final picks = await _suggestions(key, _wanted(_ownList.length));
+    if (picks.isEmpty) {
+      _messages.add('No suggestions right now.');
+      return player.setShuffleModeEnabled(false);
+    }
+    await _keepPlaying(t, _mix([for (final x in _ownList) if (x.id != t.id) x]..shuffle(), picks));
+    smartShuffle.value = true;
+  }
+
+  /// Smart Shuffle off: the suggestions still to come go, and the list carries on in its own order.
+  Future<void> _smartOff() async {
+    smartShuffle.value = false;
+    final t = current;
+    if (t == null) return;
+    final at = _ownList.indexWhere((x) => x.id == t.id);
+    await _keepPlaying(t, at < 0 ? [for (final x in _ownList) if (x.id != t.id) x] : _ownList.sublist(at + 1));
+  }
+
+  /// [t] carries on where it is, with [rest] after it.
+  Future<void> _keepPlaying(Track t, List<Track> rest) async {
+    final position = player.position, playing = player.playing;
+    _lastIndex = null; // (the same song carrying on isn't a listen of its own)
+    _queue = [t, ...rest];
+    _queueChanged();
+    await player.setShuffleModeEnabled(false);
+    await player.setAudioSources([for (final x in _queue) _source(x)], initialIndex: 0, initialPosition: position);
+    if (playing) unawaited(player.play());
+  }
+
+  /// Down to the last suggestion or so: more, among the list's songs still to come.
+  Future<void> _smartTopUp() async {
+    final i = player.currentIndex, key = _listKey, before = _queue;
+    if (!smartShuffle.value || _toppingUp || i == null || key == null || jam != null) return;
+    final ahead = before.sublist(min(i + 1, before.length));
+    if (ahead.where((t) => t.suggested).length >= 2 || ahead.where((t) => !t.suggested).length < smartEvery) return;
+    _toppingUp = true;
+    try {
+      final picks = await _suggestions(key, 10, not: [for (final t in before) if (t.suggested) t.id]);
+      if (!smartShuffle.value || !identical(before, _queue) || picks.isEmpty) return;
+      final at = <int>[]; // after every [smartEvery] of the list's songs still to come
+      var run = 0;
+      for (var k = i + 1; k < _queue.length && at.length < picks.length; k++) {
+        if (_queue[k].suggested) {
+          run = 0;
+          continue;
+        }
+        if (++run == smartEvery && (k + 1 >= _queue.length || !_queue[k + 1].suggested)) {
+          at.add(k + 1);
+          run = 0;
+        }
+      }
+      for (var j = at.length - 1; j >= 0; j--) {
+        _queue = [..._queue]..insert(at[j], picks[j]);
+        await player.insertAudioSource(at[j], _source(picks[j]));
+      }
+      _queueChanged();
+    } finally {
+      _toppingUp = false;
+    }
+  }
+
+  /// A suggestion that isn't for you: it's taken as a skip (and taken out).
+  Future<void> notForMe(Track t) async {
+    final playing = current?.id == t.id;
+    ref.read(apiProvider)?.reportSkip(t.id, playing ? player.position : Duration.zero).catchError((_) {});
+    if (playing) {
+      if (player.hasNext) await player.seekToNext();
+      return;
+    }
+    final i = _queue.indexWhere((x) => x.id == t.id);
+    if (i >= 0) await removeAt(i);
+  }
+
+  /// The song playing is being left within half a minute: a skip, which Smart Shuffle (and the songs
+  /// on trial) learn from.
+  void _noteSkip() {
+    final t = current;
+    if (t == null || t.isEpisode || t.isPreview || _previewing || jam != null) return;
+    final p = player.position;
+    if (p < const Duration(seconds: 30)) ref.read(apiProvider)?.reportSkip(t.id, p).catchError((_) {});
   }
 
   Future<void> cycleRepeat() async => jam != null ? null : player.setLoopMode(switch (player.loopMode) {
@@ -582,7 +724,7 @@ class PlayerController {
   void _onIndex(int? i) {
     if (i == _lastIndex) return;
     final prev = _lastIndex;
-    if (prev != null && prev < _queue.length) _report(_queue[prev], _lastPosition);
+    if (prev != null && prev < _queue.length) _report(_queue[prev], _playedOf(_queue[prev]));
     _lastIndex = i;
     _lastPosition = Duration.zero;
     _lastSaved = Duration.zero;
@@ -591,6 +733,7 @@ class PlayerController {
     unawaited(_offline.trimCache()); // the song that just finished may have filled the cache
     unawaited(_saveSession());
     _fetchAhead();
+    unawaited(_smartTopUp());
   }
 
   /// How many songs the phone keeps ahead of the one playing.
@@ -607,9 +750,13 @@ class PlayerController {
     unawaited(_offline.fetchAhead(api, next));
   }
 
+  /// How far into [t] it got: from the position updates, or the sampled position (a song still
+  /// streaming may not send updates).
+  Duration _playedOf(Track t) => _heard.$1 == t.id && _heard.$2 > _lastPosition ? _heard.$2 : _lastPosition;
+
   void _reportCurrent() {
     final i = _lastIndex;
-    if (i != null && i < _queue.length) _report(_queue[i], _lastPosition);
+    if (i != null && i < _queue.length) _report(_queue[i], _playedOf(_queue[i]));
     _lastIndex = null;
   }
 

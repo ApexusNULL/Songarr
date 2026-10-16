@@ -25,6 +25,13 @@ class Track {
   String? get releaseDate => json['release_date'] as String?;
   int? get trackNumber => json['track_number'] as int?;
   int? get discNumber => json['disc_number'] as int?;
+  /// Mixed in by Smart Shuffle: a song you're likely to love next, and why ([reason]).
+  bool get suggested => json['suggested'] == true;
+  String? get reason => json['reason'] as String?;
+  /// When it was added to the list it's in (a playlist, Liked Songs).
+  DateTime? get addedAt => json['added_at'] is num
+      ? DateTime.fromMillisecondsSinceEpoch(((json['added_at'] as num) * 1000).round())
+      : null;
   Duration get duration => Duration(milliseconds: (json['duration_ms'] as num?)?.toInt() ?? 0);
   bool get explicit => json['explicit'] == true;
   String? get coverUrl => json['cover_url'] as String?;

@@ -348,6 +348,8 @@ class TrackTile extends ConsumerWidget {
                         padding: const EdgeInsets.only(right: 6),
                         child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, value: progress == 0 ? null : progress)),
                       ),
+                    if (track.suggested)
+                      const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.auto_awesome_rounded, size: 13, color: glowColor)),
                     if (track.explicit)
                       Container(
                         margin: const EdgeInsets.only(right: 5),
@@ -410,6 +412,11 @@ Future<void> showTrackMenu(BuildContext context, WidgetRef ref, Track track,
               addToPlaylistDialog(context, ref, [track]);
             }),
           ],
+          if (track.suggested)
+            item(Icons.thumb_down_alt_outlined, 'Not for me', () {
+              Navigator.pop(sheet);
+              player.notForMe(track);
+            }),
           if (inLiked && position != null && list != null && list.length > 1)
             item(Icons.swap_vert_rounded, 'Move in Liked Songs', () {
               Navigator.pop(sheet);

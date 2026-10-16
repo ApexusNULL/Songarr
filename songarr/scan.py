@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 from . import library, tagging
 from .db import track_dict
 from .matching import norm, strip_title
+from .smartshuffle import TRIAL_FOLDER
 from .tagging import SPOTIFY_ID_KEY
 
 if TYPE_CHECKING:
@@ -40,7 +41,8 @@ AUDIO = {".m4a", ".mp4", ".aac", ".mp3", ".flac", ".ogg", ".oga", ".opus", ".wav
 LENGTH_SLACK = 3.0  # seconds
 RESCAN_EVERY = 24 * 3600
 BATCH = 200
-SKIP = {"$recycle.bin", "@eadir", "system volume information", ".trash", ".trashes", "#recycle"}  # bins, NAS thumbnails
+SKIP = {"$recycle.bin", "@eadir", "system volume information", ".trash", ".trashes", "#recycle",  # bins, NAS thumbnails
+        TRIAL_FOLDER.lower()}  # songs on trial (smartshuffle.py): not the music folder's own yet
 WAITING = ("wanted", "failed", "review")  # songs that would otherwise be downloaded
 
 

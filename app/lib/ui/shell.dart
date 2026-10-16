@@ -54,7 +54,7 @@ class _ShellState extends ConsumerState<Shell> {
     offline.syncEpisodes();
     _episodeSync = Timer.periodic(const Duration(minutes: 15), (_) => offline.syncEpisodes());
     final updater = ref.read(updaterProvider.notifier);
-    updater.check();
+    Future(updater.check); // (after this first build: it changes what's shown)
     final brand = ref.read(brandProvider.notifier);
     brand.refresh(ref.read(apiProvider)); // the server's name and icon (Settings → Name and icon)
     _lifecycle = AppLifecycleListener(onResume: () {

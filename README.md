@@ -60,7 +60,8 @@ library to your family's phones, with offline downloads, recommendations, podcas
 
 - Sign in with a QR code from the admin website, or with a name and password.
 - **Made-for-you** songs, artists and podcasts, with 30-second previews; **Like** downloads a song.
-- Liked Songs and playlists that are **yours to edit**: rename, reorder, add, remove.
+- **Smart Shuffle** mixes songs you're likely to love next into a playlist you shuffle.
+- Liked Songs and playlists that are **yours to edit**: rename, reorder, sort, add, remove.
 - Background playback with notification, lock-screen, Bluetooth and headphone controls.
 - **Offline downloads** and a smart listening cache. Self-updates from your own server.
 - A starry nebula look with a gyroscope **depth effect**.
@@ -512,6 +513,21 @@ deletes song files on its own: when someone unlikes a song, it only leaves *thei
   and choose **Wrong version? Replace it**. It lists the YouTube uploads the server found, each with its
   length against the song's and a link to check it on YouTube first; **Search YouTube again** finds
   more, or paste a link. **Use this version** downloads it in place of the old one, for everyone.
+- **Sort** a playlist or Liked Songs (the button above the songs): default order, date added, title,
+  artist, album, release date or length; tap the one in use again to turn it round. The list plays in
+  the order shown, and each list keeps its sort on that phone.
+- **Smart Shuffle** (the ✦ button on a playlist or Liked Songs, or tap shuffle in Now Playing until it
+  sparkles): after every two of the list's songs comes one you're likely to love next, marked ✦ with
+  why ("More from Queen", "Loved by Sam"). The server picks them from what it can tell: how well a song
+  fits the list (its artists, its era), what you play to the end, like and skip, what the family members
+  whose taste is closest to yours love, and artists like your favourites. Leaving a song within half a
+  minute counts as a skip; **Not for me** in a suggestion's menu does too.
+- **Songs on trial:** so suggestions aren't only what's already on the server, the made-for-you songs
+  of everyone using Smart Shuffle are downloaded ahead (up to 10 ready each, 40 a day in all) into
+  **Songarr Suggestions** inside the music folder, which Plex and Jellyfin are told to skip. One stays for
+  good, moved into the music folder, as soon as anyone likes it, adds it to a playlist or requests it, or
+  once it's been played to the end 4 times by 2 people or more, more often than skipped. Otherwise it's
+  removed after 30 days and isn't tried again. History says which stayed and why.
 - **Now Playing:** tap the artist under the title to open their page (with several artists, pick one).
 - **Jams:** in Now Playing tap the **people** button (or **Start a Jam with this** on a song) and
   pick who to invite. Everyone hears the same moment; anyone can play, pause, skip or add songs.
@@ -844,6 +860,7 @@ songarr/                  the server
   appapi.py               the app API (see docs/API.md)
   jams.py / push.py       Jams (shared timelines) and Firebase notifications
   recommend.py            made-for-you songs, artists and podcasts
+  smartshuffle.py         Smart Shuffle's picks, and songs on trial
   discover.py             charts, catalogue search, previews (Deezer public API)
   podcasts.py             Apple Podcasts directory, RSS feeds, safe outside fetches
   podcast_downloads.py    podcast downloads that expire

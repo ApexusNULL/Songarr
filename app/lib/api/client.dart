@@ -316,6 +316,15 @@ class SongarrApi {
   Future<void> reportPlay(String trackId, Duration played, bool completed) =>
       _send('POST', '/plays', {'track_id': trackId, 'ms_played': played.inMilliseconds, 'completed': completed});
 
+  /// A song left within half a minute: Smart Shuffle (and the songs on trial) learn from it.
+  Future<void> reportSkip(String trackId, Duration played) =>
+      _send('POST', '/skips', {'track_id': trackId, 'ms_played': played.inMilliseconds});
+
+  /// Songs to mix into [list] (`liked`, or a playlist id) while it's shuffled: the ones you're likely
+  /// to love next, each `suggested` with its `reason`. [not]: ones already had.
+  Future<List<Track>> smartShuffle(String list, {int n = 10, List<String> not = const []}) async =>
+      _tracks((await _send('POST', '/smart-shuffle', {'list': list, 'n': n, 'not': not}))['tracks']);
+
   // -- finding and requesting new songs -----------------------------------------------
 
   Future<(String?, List<CatalogItem>)> catalogSearch(String q) async {

@@ -417,7 +417,15 @@ class AppAPI:
     def liked(self, user: dict, q: dict, body: dict) -> dict:
         offset, limit = _int(q.get("offset"), 0, 0, 10**6), _int(q.get("limit"), 100, 1, 500)
         ids = self.db.liked_list(user["id"])
-        return {"total": len(ids), "offset": offset, "tracks": self.tracks_by_ids(ids[offset: offset + limit], user["id"])}
+        added = dict(self.db.q("SELECT track_id, created FROM likes WHERE user_id = ?", (user["id"],)))
+        return {"total": len(ids), "offset": offset, "tracks": self._added(self.tracks_by_ids(ids[offset: offset + limit], user["id"]), added)}
+
+    @staticmethod
+    def _added(tracks: list[dict], added: dict) -> list[dict]:
+        """Each song with when it was added to the list (`added_at`, seconds), for sorting by it."""
+        for t in tracks:
+            t["added_at"] = added.get(t["id"])
+        return tracks
 
     def move_in_liked(self, user: dict, q: dict, body: dict) -> dict:
         """Move the song at position `from` of your Liked Songs to `to`. `track_id` is the song you
@@ -448,10 +456,14 @@ class AppAPI:
         self._playlist_access(user["id"], pid)
         offset, limit = _int(q.get("offset"), 0, 0, 10**6), _int(q.get("limit"), 100, 1, 500)
         meta = self.db.one("SELECT * FROM user_playlists WHERE id = ?", (pid,))
-        ids = [r[0] for r in self.db.q("SELECT track_id FROM user_playlist_tracks WHERE playlist_id = ? ORDER BY position", (pid,))]
+        rows = self.db.q("SELECT track_id, added_at FROM user_playlist_tracks WHERE playlist_id = ? ORDER BY position", (pid,))
+        ids, added = [r[0] for r in rows], {}
+        for tid, at in rows:
+            added.setdefault(tid, at)  # (a song in it twice: when it was first added)
         info = {"id": pid, "name": meta["name"], "description": meta["description"], "kind": "app", "editable": True,
                 "owner": user["name"], "image_url": meta["image_url"], "from_spotify": bool(meta["source_id"])}
-        return info | {"total": len(ids), "offset": offset, "tracks": self.tracks_by_ids(ids[offset: offset + limit], user["id"])}
+        return info | {"total": len(ids), "offset": offset,
+                       "tracks": self._added(self.tracks_by_ids(ids[offset: offset + limit], user["id"]), added)}
 
     def create_playlist(self, user: dict, q: dict, body: dict) -> dict:
         name = str(body.get("name") or "").strip()[:100]
@@ -559,6 +571,30 @@ class AppAPI:
         self.db.run("INSERT INTO plays(user_id, track_id, played_at, ms_played, completed) VALUES (?,?,?,?,?)",
                     (user["id"], tid, time.time(), _int(body.get("ms_played"), 0, 0, 10**8), int(bool(body.get("completed")))))
         return {"ok": True}
+
+    def skip(self, user: dict, q: dict, body: dict) -> dict:
+        """A song left within half a minute: Smart Shuffle suggests it (and its artist) less, and a song
+        on trial counts it against staying."""
+        tid = str(body.get("track_id") or "")
+        if not self.db.one("SELECT 1 FROM tracks WHERE id = ?", (tid,)):
+            raise ApiError(404, "No such song.")
+        self.svc.smart_shuffle.skipped(user["id"], tid, _int(body.get("ms_played"), 0, 0, 10**8))
+        return {"ok": True}
+
+    def smart_shuffle(self, user: dict, q: dict, body: dict) -> dict:
+        """Songs to mix into a list being shuffled (`list`: `liked` or a playlist id), the ones this
+        profile is likely to love next, each with why (`reason`). `not`: ids it already has."""
+        uid, key = user["id"], str(body.get("list") or "liked")
+        if key == "liked":
+            ids = self.db.liked_list(uid)
+        else:
+            self._playlist_access(uid, key)
+            ids = [r[0] for r in self.db.q("SELECT track_id FROM user_playlist_tracks WHERE playlist_id = ?", (key,))]
+        have = {str(i) for i in (body.get("not") or [])[:2000]}
+        picks = self.svc.smart_shuffle.suggest(uid, ids, _int(body.get("n"), 10, 1, 50), have)
+        self.svc.smart_shuffle.used(uid)
+        why = dict(picks)
+        return {"tracks": [t | {"suggested": True, "reason": why[t["id"]]} for t in self.tracks_by_ids(list(why), uid)]}
 
     # -- podcasts --------------------------------------------------------------------
 
@@ -1048,6 +1084,8 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
     route("PUT", r"/likes/([A-Za-z0-9]+)", api.like)
     route("DELETE", r"/likes/([A-Za-z0-9]+)", api.unlike)
     route("POST", "/plays", api.play)
+    route("POST", "/skips", api.skip)
+    route("POST", "/smart-shuffle", api.smart_shuffle)
     route("GET", "/catalog/search", api.catalog_search)
     route("POST", "/requests", api.request)
     route("GET", "/catalog/albums", api.catalog_albums)
@@ -1121,23 +1159,46 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
             return h[7:].strip() if h.lower().startswith("bearer ") else ""
 
         def body(self) -> dict:
-            try:
-                n = int(self.headers.get("Content-Length") or 0)
-            except ValueError:
-                n = -1
-            if n < 0 or n > MAX_BODY or self.headers.get("Transfer-Encoding"):
-                self.close_connection = True  # its body isn't read, so nothing more can be read on this connection
-                raise ApiError(413 if n > MAX_BODY else 400, "Request too large." if n > MAX_BODY else "Bad request length.")
-            self._body_read = True
-            if not n:
+            if (self.headers.get("Transfer-Encoding") or "").strip().lower() == "chunked":
+                raw = self._chunked()  # (how Cloudflare passes some on: a like has no body at all)
+            else:
+                try:
+                    n = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    n = -1
+                if n < 0 or n > MAX_BODY or self.headers.get("Transfer-Encoding"):
+                    self.close_connection = True  # its body isn't read, so nothing more can be read on this connection
+                    raise ApiError(413 if n > MAX_BODY else 400, "Request too large." if n > MAX_BODY else "Bad request length.")
+                self._body_read = True
+                raw = self.rfile.read(n) if n else b""
+            if not raw.strip():
                 return {}
             try:
-                data = json.loads(self.rfile.read(n))
+                data = json.loads(raw)
             except ValueError:
                 raise ApiError(400, "Body must be JSON.") from None
             if not isinstance(data, dict):
                 raise ApiError(400, "Body must be a JSON object.")
             return data
+
+        def _chunked(self) -> bytes:
+            """A body sent in chunks (Transfer-Encoding: chunked), up to MAX_BODY."""
+            data = b""
+            while True:
+                try:
+                    size = int(self.rfile.readline(100).split(b";")[0].strip(), 16)
+                except ValueError:
+                    size = -1
+                if size < 0 or len(data) + size > MAX_BODY:
+                    self.close_connection = True  # the rest can't be read reliably
+                    raise ApiError(400 if size < 0 else 413, "Bad request." if size < 0 else "Request too large.")
+                if size == 0:
+                    while self.rfile.readline(1000).strip():  # (trailers, if any, up to the blank line)
+                        pass
+                    self._body_read = True
+                    return data
+                data += self.rfile.read(size)
+                self.rfile.readline(100)  # the line end after each chunk
 
         def handle_any(self) -> None:
             self._body_read = False

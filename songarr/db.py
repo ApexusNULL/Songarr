@@ -308,6 +308,21 @@ CREATE TABLE IF NOT EXISTS recommendations(
     data     TEXT NOT NULL,
     computed REAL NOT NULL
 );
+-- songs left within half a minute (the app says so), for Smart Shuffle and songs on trial
+CREATE TABLE IF NOT EXISTS skips(
+    id        INTEGER PRIMARY KEY,
+    user_id   INTEGER NOT NULL,
+    track_id  TEXT NOT NULL,
+    at        REAL NOT NULL,
+    ms_played INTEGER
+);
+CREATE INDEX IF NOT EXISTS skips_user ON skips(user_id, at DESC);
+CREATE INDEX IF NOT EXISTS skips_track ON skips(track_id);
+-- when each profile last shuffled with Smart Shuffle (they get songs on trial while they do)
+CREATE TABLE IF NOT EXISTS smart_shuffle(
+    user_id INTEGER PRIMARY KEY,
+    used    REAL NOT NULL
+);
 """
 
 # wanted -> searching -> downloading -> downloaded
@@ -343,7 +358,9 @@ MIGRATIONS = {
     "tracks": {"blocked": "INTEGER NOT NULL DEFAULT 0",
                "priority": "INTEGER NOT NULL DEFAULT 0",  # app requests jump the queue
                "requested_at": "REAL",  # when it was last requested: the newest request downloads first
-               "previous_youtube_id": "TEXT"},  # while another version replaces it: the upload it had (service.replace)
+               "previous_youtube_id": "TEXT",  # while another version replaces it: the upload it had (service.replace)
+               "trial": "INTEGER NOT NULL DEFAULT 0",  # 1: downloaded to try out (smartshuffle.py); 2: was, not kept
+               "trial_since": "REAL"},
     "devices": {"push_token": "TEXT"},  # Firebase registration token, for Jam invites
     "user_playlists": {"source_id": "TEXT",  # the Spotify playlist it was brought over from (before Exportify)
                        "source_name": "TEXT", "source_snapshot": "TEXT", "source_seen": "TEXT", "image_url": "TEXT"},

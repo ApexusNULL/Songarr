@@ -241,6 +241,18 @@ class _NowPlaying extends ConsumerWidget {
                             ),
                           ),
                         ]),
+                        if (t.suggested)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Row(children: [
+                              const Icon(Icons.auto_awesome_rounded, size: 14, color: glowColor),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text('Smart Shuffle · ${t.reason ?? 'for you'}', maxLines: 1, overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(color: glowColor, fontSize: 13)),
+                              ),
+                            ]),
+                          ),
                       ],
                     ),
                   ),
@@ -278,12 +290,19 @@ class _NowPlaying extends ConsumerWidget {
                 if (t.isEpisode)
                   IconButton(iconSize: 32, tooltip: 'Back 10 seconds', icon: const Icon(Icons.replay_10_rounded), onPressed: () => c.skipBy(const Duration(seconds: -10)))
                 else
-                  StreamBuilder<bool>(
-                    stream: p.shuffleModeEnabledStream,
-                    builder: (_, sh) => IconButton(
-                      tooltip: 'Shuffle',
-                      icon: sh.data == true ? const GradientMask(child: Icon(Icons.shuffle_rounded)) : const Icon(Icons.shuffle_rounded, color: Colors.white70),
-                      onPressed: t.isPreview || inJam ? null : c.toggleShuffle,
+                  ValueListenableBuilder<bool>(
+                    valueListenable: c.smartShuffle,
+                    builder: (_, smart, _) => StreamBuilder<bool>(
+                      stream: p.shuffleModeEnabledStream,
+                      builder: (_, sh) => IconButton(
+                        tooltip: smart ? 'Smart Shuffle' : 'Shuffle',
+                        icon: smart
+                            ? const GradientMask(child: Icon(Icons.auto_awesome_rounded))
+                            : sh.data == true
+                                ? const GradientMask(child: Icon(Icons.shuffle_rounded))
+                                : const Icon(Icons.shuffle_rounded, color: Colors.white70),
+                        onPressed: t.isPreview || inJam ? null : c.toggleShuffle,
+                      ),
                     ),
                   ),
                 IconButton(iconSize: 42, tooltip: 'Previous', icon: const Icon(Icons.skip_previous_rounded), onPressed: c.previous),
@@ -351,7 +370,8 @@ class _NowPlaying extends ConsumerWidget {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                     leading: Cover(queue[k].thumbUrl, size: 44),
                     title: current ? GradientMask(child: title) : title,
-                    subtitle: Text(queue[k].artistLine, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(queue[k].suggested ? _suggestedLine(queue[k]) : queue[k].artistLine,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
                     trailing: current
                         ? StreamBuilder<bool>(stream: c.player.playingStream, builder: (_, s) => EqualizerBars(playing: s.data == true))
                         : c.inJam
@@ -530,4 +550,10 @@ class _SpeedChip extends StatelessWidget {
           ]);
         },
       );
+}
+
+/// A Smart Shuffle suggestion in the queue: why, and who by (unless the why says so already).
+String _suggestedLine(Track t) {
+  final why = t.reason ?? 'Suggested';
+  return t.artists.isNotEmpty && why.contains(t.artists.first) ? '✦ $why' : '✦ $why · ${t.artistLine}';
 }

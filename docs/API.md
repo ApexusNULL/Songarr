@@ -77,8 +77,8 @@ Only `playable` songs can be streamed. Cover URLs are public CDN images, so load
 | `GET /library` | `{liked: {count}, playlists: [{id, name, kind: "app", owner, image_url, count, editable, from_spotify}]}`, in your order (see below; by default most recently changed first). `from_spotify: true` for one brought over from Spotify (an ordinary playlist of yours all the same); `GET /playlists/{spotify id}` opens it |
 | `POST /library/liked/move` `{from, to, track_id}` | `{ok}`. Moves a song within your Liked Songs (409 if the list changed meanwhile) |
 | `PUT /library/order` `{playlist_ids: [...]}` | the library, with playlists in that order (your own arrangement; ids you don't have are ignored). Playlists not in it, like new ones, are listed first |
-| `GET /library/liked?offset=&limit=` | `{total, offset, tracks}` (up to 500 per page), newest like first, or in your order once you've moved something (songs liked since then come first) |
-| `GET /playlists/{id}?offset=&limit=` | `{id, name, kind, editable, owner, image_url, total, offset, tracks}` |
+| `GET /library/liked?offset=&limit=` | `{total, offset, tracks}` (up to 500 per page), newest like first, or in your order once you've moved something (songs liked since then come first). Each track also has `added_at` (when it was liked, Unix seconds) |
+| `GET /playlists/{id}?offset=&limit=` | `{id, name, kind, editable, owner, image_url, total, offset, tracks}`; each track also has `added_at` (when it was added to the playlist, Unix seconds) |
 | `POST /playlists` `{name, description?}` | new app playlist |
 | `PATCH /playlists/{id}` `{name?, description?}` | playlist |
 | `DELETE /playlists/{id}` | `{ok}` |
@@ -88,6 +88,8 @@ Only `playable` songs can be streamed. Cover URLs are public CDN images, so load
 | `PUT /likes/{track_id}` | `{liked: true}` |
 | `DELETE /likes/{track_id}` | `{liked: false, on_spotify: false}` (`on_spotify` is always false: apps up to 1.8 expect it) |
 | `POST /plays` `{track_id, ms_played, completed}` | `{ok}`. Send when a song ends or is skipped; feeds Home |
+| `POST /skips` `{track_id, ms_played}` | `{ok}`. Send when a song is left within half a minute (even under 5 seconds): Smart Shuffle suggests it and its artist less, and a song on trial counts it against staying |
+| `POST /smart-shuffle` `{list, n, not}` | `{tracks}`: up to `n` songs (default 10, at most 50) to mix into `list` (`liked`, or a playlist id) while it's shuffled, the ones the profile is likely to love next, best first with some chance in it; each track also has `suggested: true` and `reason` ("More from Queen", "Loved by Sam", "New for you"). `not`: ids to leave out (ones already had). Never a song in the list, one the profile likes, heard in the last 3 days or skipped. Using it keeps songs on trial ready for the profile (see the README) |
 | `GET /stream/{track_id}` | the audio file (see below) |
 | `GET /app/update?abi=&build=` | `{available, update: {version, build, notes, published, size, sha256, abi} or null}`. `abi` is the phone's processor type (`arm64-v8a`, `armeabi-v7a`, `x86_64`); `build` the installed build number |
 | `GET /app/update/apk?abi=` | the newest APK for that processor type (`Range` works). Verify `sha256` before installing |
