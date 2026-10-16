@@ -81,7 +81,17 @@ final artistAboutProvider = FutureProvider.autoDispose.family<ArtistAbout?, Stri
   return null;
 });
 
-final lyricsProvider = FutureProvider.autoDispose.family<Lyrics?, String>((ref, trackId) => _api(ref).lyrics(trackId));
+final lyricsProvider = FutureProvider.autoDispose.family<Lyrics?, String>((ref, trackId) async {
+  final api = _api(ref);
+  for (var attempt = 1;; attempt++) {
+    try {
+      return await api.lyrics(trackId);
+    } on ApiException catch (e) {
+      if (e.status != 429 || attempt == 3) rethrow; // the lyrics service is busy: a moment, then again
+      await Future<void>.delayed(Duration(seconds: 8 * attempt));
+    }
+  }
+});
 final podcastProvider = FutureProvider.autoDispose.family<PodcastDetail, String>((ref, id) => _api(ref).podcast(id));
 final podcastSearchProvider =
     FutureProvider.autoDispose.family<List<PodcastSummary>, String>((ref, q) => _api(ref).searchPodcasts(q));

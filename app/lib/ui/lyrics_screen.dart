@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../api/client.dart';
 import '../api/models.dart';
 import '../state/data.dart';
 import '../state/player.dart';
@@ -78,7 +79,11 @@ class LyricsScreen extends ConsumerWidget {
                       ? const _Message('Lyrics show here while a song plays.')
                       : ref.watch(lyricsProvider(t.id)).when(
                             loading: () => const Center(child: CircularProgressIndicator()),
-                            error: (e, _) => _Message('Couldn\'t load lyrics: $e'),
+                            error: (e, _) => _Message(
+                                  e is ApiException && e.status == 429
+                                      ? 'The lyrics service is busy right now.'
+                                      : 'Couldn\'t load lyrics: ${e is ApiException ? e.message : e}',
+                                  onRetry: () => ref.invalidate(lyricsProvider(t.id))),
                             data: (l) => l == null
                                 ? const _Message('No lyrics found for this song.')
                                 : l.instrumental && !l.isSynced && l.plain.isEmpty
@@ -99,11 +104,22 @@ class LyricsScreen extends ConsumerWidget {
 }
 
 class _Message extends StatelessWidget {
-  const _Message(this.text);
+  const _Message(this.text, {this.onRetry});
   final String text;
+  final VoidCallback? onRetry;
   @override
-  Widget build(BuildContext context) =>
-      Center(child: Padding(padding: const EdgeInsets.all(32), child: Text(text, textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 16))));
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(text, textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 16)),
+            if (onRetry != null) ...[
+              const SizedBox(height: 12),
+              TextButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh_rounded), label: const Text('Try again')),
+            ],
+          ]),
+        ),
+      );
 }
 
 class _PlainLyrics extends StatelessWidget {

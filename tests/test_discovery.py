@@ -504,6 +504,19 @@ class DiscoveryTests(unittest.TestCase):
             lyrics._get = lambda path, **q: None if path == "get" else []
             self.assertEqual(self.get(f"/api/v1/lyrics/{3:022d}")[0], 404)
             self.assertEqual(self.get("/api/v1/lyrics/nosuchsong")[0], 404)
+            # LRCLIB busy: "try again", not "no lyrics", and nothing remembered
+            def busy(path, **q):
+                raise lyrics.Busy("LRCLIB asked to slow down for 60 seconds")
+            lyrics._get = busy
+            tid = f"{4:022d}"
+            st, res, _ = self.get(f"/api/v1/lyrics/{tid}")
+            self.assertEqual(st, 429)
+            self.assertIn("busy", res["error"])
+            self.assertIsNone(self.svc.db.one("SELECT 1 FROM lyrics WHERE track_id = ?", (tid,)))
+            row = self.svc.db.one("SELECT title, artists FROM tracks WHERE id = ?", (tid,))
+            lyrics._get = lambda path, **q: None if path == "get" else [
+                {"trackName": row["title"], "artistName": json.loads(row["artists"])[0], "plainLyrics": "words"}]
+            self.assertEqual(self.get(f"/api/v1/lyrics/{tid}")[1]["plain"], "words")  # found once it answers
         finally:
             lyrics._get = orig
 

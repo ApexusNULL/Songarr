@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import __version__, app_updates, discover, download_page, podcasts
+from . import __version__, app_updates, discover, download_page, lyrics, podcasts
 from .releases import FollowError
 from . import jams
 from .jams import Jam, JamError
@@ -244,7 +244,10 @@ class AppAPI:
         row = self.db.one("SELECT id, title, artists, album, duration_ms FROM tracks WHERE id = ?", (tid,))
         if row is None:
             raise ApiError(404, "No such song.")
-        found = self.svc.lyrics.get(dict(row))
+        try:
+            found = self.svc.lyrics.get(dict(row))
+        except lyrics.Busy:
+            raise ApiError(429, "The lyrics service is busy right now. Try again in a minute.") from None
         if found is None:
             raise ApiError(404, "No lyrics found for this song.")
         return found
