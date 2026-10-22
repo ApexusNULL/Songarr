@@ -40,6 +40,22 @@
             </intent-filter>
         </activity>
 
+        <!-- Play from another app: songarr://play?list=liked|<playlist id>&album=&track=&shuffle=1&back=1 (docs/API.md).
+             Shows nothing: the link goes to the running player, or opens Songarr when it isn't running. -->
+        <activity
+            android:name=".PlayLinkActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="songarr" android:host="play"/>
+            </intent-filter>
+        </activity>
+
         <service
             android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"

@@ -35,6 +35,19 @@ class MainActivity : AudioServiceActivity() {
         super.configureFlutterEngine(flutterEngine)
         createJamChannel()
         val messenger = flutterEngine.dartExecutor.binaryMessenger
+        // Play links from other apps (PlayLinkActivity): one waiting for the app, and going back to that app afterwards.
+        PlayLinks.channel = MethodChannel(messenger, "songarr/links").apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "initial" -> {
+                        result.success(PlayLinks.pending)
+                        PlayLinks.pending = null
+                    }
+                    "back" -> result.success(moveTaskToBack(true))
+                    else -> result.notImplemented()
+                }
+            }
+        }
         // Android 13+ only shows the playback notification (and lock-screen player) once the
         // app may post notifications, so ask the first time.
         MethodChannel(messenger, "songarr/permissions").setMethodCallHandler { call, result ->

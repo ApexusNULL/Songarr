@@ -146,6 +146,25 @@ the people in the Jam like; a Jam of podcast episodes just stops at the end.
 
 Podcast downloads expire, unlike songs: an episode stays on the server while any profile keeps it, and its file is deleted once nobody does. They're stored under the `podcast_root` setting (default: a `Podcasts` folder next to the music library).
 
+## Playing from other apps
+
+Another app on the phone (the fitness app's workout music, say) can make the Songarr app play
+something, with no Songarr screen shown when Songarr is already running:
+
+```
+songarr://play?list=liked                 your Liked Songs
+songarr://play?list=<playlist id>         one of your playlists (ids from GET /library)
+songarr://play?album=<album id>           an album on the server
+songarr://play?track=<song id>            one song (with list= or album=: that list, from this song)
+            &shuffle=1                    shuffled
+            &back=1                       if Songarr had to open, go back to the app that asked
+```
+
+Open it as an Android `ACTION_VIEW` intent for package `com.songarr.songarr_app` (Android 11+ apps
+declare it in `<queries>`). Songarr 1.10 and later handle it; an older Songarr has nothing that
+answers the intent. Other apps sign in like any app (`POST /auth/login` or a pairing code) to list
+the profile's playlists and search. Only Songarr plays.
+
 ## Servers
 
 A family can run more than one server (a main one and backups, sharing their music on a NAS). One is

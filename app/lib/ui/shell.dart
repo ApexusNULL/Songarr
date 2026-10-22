@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../state/links.dart';
 import '../state/brand.dart';
 import '../state/data.dart';
 import '../state/jam.dart';
@@ -48,7 +49,10 @@ class _ShellState extends ConsumerState<Shell> {
       if (mounted) toast(context, m);
     });
     // Pick up where you left off: the last song, paused, after closing, a force-close or an update.
-    unawaited(ref.read(playerProvider).restoreLastSession());
+    final restored = ref.read(playerProvider).restoreLastSession();
+    unawaited(restored);
+    // "Play this" from another app (the fitness app's workout music): after the last session is back.
+    PlayLinks.listen(ref, restored);
     // Podcast downloads follow the server: on start, when the app comes back, and now and then.
     final offline = ref.read(offlineProvider.notifier);
     offline.syncEpisodes();
@@ -101,6 +105,7 @@ class _ShellState extends ConsumerState<Shell> {
 
   @override
   void dispose() {
+    PlayLinks.stop();
     _jams?.close();
     for (final s in _push) {
       s.cancel();
