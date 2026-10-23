@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 PHONE = "arm64-v8a"  # every phone from the last several years
 OLDER = "armeabi-v7a"  # 32-bit phones
+DESKTOP = "windows-x64"  # the desktop app's installer
 NOTE = "M9 18.5A3.5 3.5 0 1 1 7 15.3V4l12-2v13.5a3.5 3.5 0 1 1-2-3.2V6.3L9 7.6z"  # Songarr's logo
 # Screenshots of each step (Android 16, Songarr's own name and icon, nothing typed in)
 PICTURES = Path(__file__).with_name("assets") / "download"
@@ -46,6 +47,8 @@ def picture(name: str) -> Path | None:
 def apk_name(svc: Service, abi: str) -> str:
     latest = svc.app_updates.latest(abi) or {}
     name = re.sub(r"[^A-Za-z0-9._-]+", "-", svc.branding.name()).strip("-.") or "Songarr"
+    if abi == DESKTOP:
+        return f"{name}-{latest.get('version') or 'app'}-Setup.exe"
     return f"{name}-{latest.get('version') or 'app'}.apk"
 
 
@@ -61,7 +64,7 @@ def render(svc: Service) -> bytes:
     e = html.escape
     name = svc.branding.name()
     info = svc.branding.info()
-    phone, older = svc.app_updates.latest(PHONE), svc.app_updates.latest(OLDER)
+    phone, older, desktop = svc.app_updates.latest(PHONE), svc.app_updates.latest(OLDER), svc.app_updates.latest(DESKTOP)
     icon = (f'<img class="icon" src="/download/icon.png?v={e(info["icon"])}" alt="">' if info["icon"] else
             f'<div class="icon mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="{NOTE}"/></svg></div>')
     if phone or older:
@@ -73,6 +76,9 @@ def render(svc: Service) -> bytes:
                     f'Get the 32-bit version</a> ({_size(older.get("size"))}).</div>')
     else:
         get = '<p class="meta">The app isn\'t ready to download yet. Check back soon.</p>'
+    if desktop:  # (the Windows installer: a link under the phone app's button)
+        get += (f'<div class="meta small">On a Windows PC? <a href="/download/{e(apk_name(svc, DESKTOP))}?abi={DESKTOP}">'
+                f'Download {e(name)} for Windows</a> (version {e(desktop["version"])}, {_size(desktop.get("size"))}).</div>')
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

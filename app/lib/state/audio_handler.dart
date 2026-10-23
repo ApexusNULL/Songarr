@@ -5,6 +5,8 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import 'desktop.dart';
+
 /// The bridge between the player and the phone: the media session that drives the
 /// notification, lock screen, Bluetooth/car controls and headphone buttons.
 ///
@@ -22,7 +24,8 @@ class SongarrAudioHandler extends BaseAudioHandler with SeekHandler {
     _configureSession();
   }
 
-  final player = AudioPlayer();
+  // (a computer's player, media_kit, sends the server's sign-in header itself: no local proxy)
+  final player = AudioPlayer(useProxyForRequestHeaders: !DesktopWindow.isDesktop);
 
   /// Set by PlayerController: its own idea of next/previous (e.g. restart if past 3 s), and
   /// play/pause/seek that go to a Jam when one is on.

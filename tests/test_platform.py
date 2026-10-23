@@ -538,6 +538,17 @@ class AppAPITests(unittest.TestCase):
         files = sorted(p.name for p in (self.svc.data_dir / "app-updates").iterdir())
         self.assertEqual(files, ["manifest.json", "songarr-1.2.0+7-x86_64.apk", "songarr-1.2.1+8-arm64-v8a.apk"])
         self.assertEqual(self.get("/api/v1/app/update?abi=arm64-v8a&build=7")[1]["update"]["build"], 8)
+        # the desktop app's installer, published the same way
+        setup = app / "build" / "windows" / "installer" / "Songarr-Setup.exe"
+        setup.parent.mkdir(parents=True)
+        setup.write_bytes(b"MZ desktop installer build 8")
+        app_updates.publish(self.svc.data_dir, app, "On your PC too", ("windows-x64",))
+        st, res, _ = self.get("/api/v1/app/update?abi=windows-x64&build=7")
+        self.assertEqual((st, res["update"]["build"], res["update"]["notes"]), (200, 8, "On your PC too"))
+        st, body, h = self.call(self.token, "GET", "/api/v1/app/update/apk?abi=windows-x64", raw=True)
+        self.assertEqual((st, body, h["Content-Type"]), (200, b"MZ desktop installer build 8", "application/vnd.microsoft.portable-executable"))
+        self.assertIn("songarr-1.2.1+8-windows-x64.exe", [p.name for p in (self.svc.data_dir / "app-updates").iterdir()])
+        self.assertEqual(self.get("/api/v1/app/update?abi=arm64-v8a&build=7")[1]["update"]["build"], 8)  # the phones' still there
         # publishing a build number phones were already offered says they won't take it
         import contextlib
         import io

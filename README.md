@@ -27,6 +27,7 @@ library to your family's phones, with offline downloads, recommendations, podcas
 - [Step 3: A web address for your phones](#step-3-a-web-address-for-your-phones)
 - [Step 4: Build and install the Android app](#step-4-build-and-install-the-android-app)
 - [Step 5: Sign in on each phone](#step-5-sign-in-on-each-phone)
+- [The desktop app (Windows)](#the-desktop-app-windows)
 - [Optional extras](#optional-extras): Jam notifications (Firebase), Wikipedia, Last.fm, YouTube sign-in, family members, start at logon
 - [Using Songarr](#using-songarr)
 - [Keeping it working](#keeping-it-working) · [Backup servers](#backup-servers): a second server that takes over by itself
@@ -344,6 +345,28 @@ The page says nothing about your server or the people on it, not even its addres
 the address and their sign-in (a pairing code or a password) yourself, and the app does nothing
 without them. Search engines are asked not to list it. **Settings → App access → Download page**
 switches it off; then `/download` answers an empty 404 like every other address.
+
+### The desktop app (Windows)
+
+The same app runs on a Windows PC: everything the phone app does, in a window. Wide, the tabs go
+down the side and the player along the bottom; make it narrow and it lays itself out like the phone.
+**Space** plays and pauses, **Ctrl+→ / Ctrl+←** skip (and the keyboard's media keys while it's in
+front); right-click anything for its menu. Sign in with a pairing code or a password.
+
+**Build it** (on Windows, with Flutter and Visual Studio's *Desktop development with C++* tools;
+turn on **Settings → System → For developers → Developer Mode** once, as Flutter's plugins need it;
+and [Inno Setup 6](https://jrsoftware.org/isinfo.php), `winget install JRSoftware.InnoSetup`):
+
+```powershell
+.venv\Scripts\python.exe app\windows\installer\build.py
+.venv\Scripts\python.exe -m songarr.app_updates publish --abi windows-x64 --notes "What's new"
+```
+
+The first makes `app\build\windows\installer\Songarr-Setup.exe` (the first build also fetches
+Firebase's Windows SDK, about 1 GB, once). The second offers it: your download page gets a
+**Download for Windows** link, and the desktop app on each PC updates itself, as phones do. The
+installer is for one person (no administrator needed), to their Programs folder, with a Start menu
+entry. It isn't signed, so Windows' SmartScreen asks once (**More info → Run anyway**).
 
 ## Step 5: Sign in on each phone
 

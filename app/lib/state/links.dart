@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/services.dart';
@@ -24,6 +25,7 @@ class PlayLinks {
   /// Handle the link that opened the app, and any that arrive while it runs. [restored] is the last
   /// session being put back: a link plays after it, so it isn't overwritten.
   static void listen(WidgetRef ref, Future<void> restored) {
+    if (!Platform.isAndroid) return; // (links reach the Android app only)
     _ch.setMethodCallHandler((call) async {
       if (call.method == 'open' && call.arguments is String) await open(ref, Uri.parse(call.arguments as String), restored);
     });

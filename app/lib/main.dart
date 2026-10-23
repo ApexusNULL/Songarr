@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
 import 'state/audio_handler.dart';
 import 'state/brand.dart';
+import 'state/desktop.dart';
 import 'state/offline.dart';
 import 'state/push.dart';
 import 'state/session.dart';
@@ -15,6 +17,10 @@ import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isWindows || Platform.isLinux) {
+    JustAudioMediaKit.title = 'Songarr';
+    JustAudioMediaKit.ensureInitialized(); // the player on a computer (libmpv, through media_kit)
+  }
   // The media session: background playback, the notification and lock-screen player, and
   // controls from headphones, Bluetooth and cars.
   final SongarrAudioHandler handler;
@@ -51,10 +57,13 @@ class SongarrApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(offlineProvider); // start loading downloads and the cache index early
+    final name = ref.watch(brandProvider).name;
+    DesktopWindow.setTitle(name);
     return MaterialApp(
-      title: ref.watch(brandProvider).name, // the recent-apps list
+      title: name, // the recent-apps list
       debugShowCheckedModeBanner: false,
       theme: songarrTheme(),
+      scrollBehavior: DesktopWindow.isDesktop ? const MouseDragScrollBehavior() : null,
       color: background,
       builder: (context, child) => ColoredBox(color: background, child: child), // pages are see-through
       home: const _Root(),

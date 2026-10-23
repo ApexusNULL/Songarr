@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../state/data.dart';
+import '../state/desktop.dart';
 import '../state/list_sort.dart';
 import '../state/offline.dart';
 import '../state/player.dart';
@@ -114,7 +115,7 @@ class TrackListScreen extends ConsumerWidget {
         : _kind == _Kind.downloads
             ? '${tracks.length} songs · ${formatBytes(offline.downloadBytes)}'
             : page.offline
-            ? 'Offline · ${tracks.length} song${tracks.length == 1 ? '' : 's'} on this phone · pull down to try again'
+            ? 'Offline · ${tracks.length} song${tracks.length == 1 ? '' : 's'} on this ${DesktopWindow.device} · pull down to try again'
             : '${page.total} songs · ${formatLength(total)}${waiting > 0 ? ' · $waiting still downloading to server' : ''}';
     final art = switch (_kind) {
       _Kind.liked => const LikedCover(size: 170, radius: 85),

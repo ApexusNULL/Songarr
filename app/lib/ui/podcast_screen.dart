@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/client.dart';
 import '../api/models.dart';
 import '../state/data.dart';
+import '../state/desktop.dart';
 import '../state/offline.dart';
 import '../state/player.dart';
 import '../state/session.dart';
@@ -68,7 +69,7 @@ class _PodcastScreenState extends ConsumerState<PodcastScreen> {
       await api.setPodcastDownloads(widget.id, keep);
       ref.invalidate(podcastProvider(widget.id));
       ref.read(offlineProvider.notifier).syncEpisodesSoon();
-      if (mounted && keep != 'off') toast(context, 'New episodes will download to your server and this phone');
+      if (mounted && keep != 'off') toast(context, 'New episodes will download to your server and this ${DesktopWindow.device}');
     } on ApiException catch (e) {
       setState(() => _downloads = before);
       if (mounted) toast(context, e.message);
@@ -213,8 +214,8 @@ class _DownloadSetting extends StatelessWidget {
 
   String get _explain => switch (value) {
         'off' => 'Episodes stream when you play them.',
-        'played' => 'The newest episodes download to your server and this phone, and each one is deleted once you\'ve finished it.',
-        _ => 'The newest episodes download to your server and this phone, and are deleted after $value days.',
+        'played' => 'The newest episodes download to your server and this ${DesktopWindow.device}, and each one is deleted once you\'ve finished it.',
+        _ => 'The newest episodes download to your server and this ${DesktopWindow.device}, and are deleted after $value days.',
       };
 
   @override
@@ -318,7 +319,7 @@ class EpisodeTile extends ConsumerWidget {
                 : e.progress > Duration.zero
                     ? '${formatLength(e.duration - e.progress)} left'
                     : formatLength(e.duration),
-          if (kept != null) onPhone ? 'On this phone, $kept' : 'Downloading, $kept',
+          if (kept != null) onPhone ? 'On this ${DesktopWindow.device}, $kept' : 'Downloading, $kept',
         ].where((s) => s.isNotEmpty).join(' · ');
         final title = Text(e.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, height: 1.25));
         return Pressable(
@@ -568,7 +569,7 @@ class _PodcastsScreenState extends ConsumerState<PodcastsScreen> {
               error: (e, _) => [ErrorView(e, onRetry: () => ref.invalidate(podcastsProvider))],
               data: (s) => [
                 if (onPhone.isNotEmpty) ...[
-                  const SectionTitle('On this phone', subtitle: 'Removed when played or when their days run out'),
+                  SectionTitle('On this ${DesktopWindow.device}', subtitle: 'Removed when played or when their days run out'),
                   for (final e in onPhone) EpisodeTile(episode: e, showPodcast: true),
                 ],
                 if (s.continueListening.isNotEmpty) ...[

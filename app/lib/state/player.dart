@@ -14,6 +14,7 @@ import '../api/client.dart';
 import '../api/models.dart';
 import 'audio_handler.dart';
 import 'data.dart';
+import 'desktop.dart';
 import 'offline.dart';
 import 'session.dart';
 
@@ -190,6 +191,9 @@ class PlayerController {
     final local = _offline.localFile(t);
     if (local != null) return AudioSource.file(local, tag: tag);
     if (api == null) throw StateError('Not signed in');
+    // On a computer just_audio's caching source sticks: Windows won't rename its cache file while
+    // it's still being read, so the song stalls. There it streams, and is cached alongside (_fetchAhead).
+    if (DesktopWindow.isDesktop) return AudioSource.uri(api.streamUri(t.id), headers: api.authHeaders, tag: tag);
     // Experimental in just_audio, but it's exactly "cache the original file while it streams".
     // ignore: experimental_member_use
     return LockCachingAudioSource(api.streamUri(t.id), headers: api.authHeaders, cacheFile: File(_offline.cachePath(t)), tag: tag);
@@ -751,7 +755,8 @@ class PlayerController {
     final at = order.indexOf(i);
     if (at < 0) return;
     final next = [for (final k in order.skip(at + 1).take(ahead)) if (k < _queue.length) _queue[k]];
-    unawaited(_offline.fetchAhead(api, next));
+    // (a computer streams without caching: the one playing is fetched into the cache too)
+    unawaited(_offline.fetchAhead(api, [if (DesktopWindow.isDesktop && i < _queue.length) _queue[i], ...next]));
   }
 
   /// How far into [t] it got: from the position updates, or the sampled position (a song still

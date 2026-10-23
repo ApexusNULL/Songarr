@@ -22,7 +22,16 @@ import threading
 import time
 from pathlib import Path
 
-ABIS = ("arm64-v8a", "armeabi-v7a", "x86_64")
+ABIS = ("arm64-v8a", "armeabi-v7a", "x86_64")  # the phone app, one APK for each processor type
+DESKTOP = ("windows-x64",)  # the desktop app's installer (app/windows/installer/build.py)
+ALL = ABIS + DESKTOP
+
+
+def built(app_dir: Path, abi: str) -> Path:
+    """Where `flutter build` (or, for the desktop app, its installer build) leaves [abi]'s file."""
+    if abi == "windows-x64":
+        return app_dir / "build" / "windows" / "installer" / "Songarr-Setup.exe"
+    return app_dir / "build" / "app" / "outputs" / "flutter-apk" / f"app-{abi}-release.apk"
 PROGRAM_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DATA = Path(os.environ.get("PROGRAMDATA", Path.home())) / "Songarr"
 
@@ -77,11 +86,10 @@ def publish(data_dir: Path, app_dir: Path, notes: str = "", abis: tuple[str, ...
         version, build = pubspec_version(app_dir)
     out = Path(data_dir) / "app-updates"
     out.mkdir(parents=True, exist_ok=True)
-    built = app_dir / "build" / "app" / "outputs" / "flutter-apk"
-    sources = {abi: built / f"app-{abi}-release.apk" for abi in abis}
+    sources = {abi: built(app_dir, abi) for abi in abis}
     present = {abi: p for abi, p in sources.items() if p.is_file()}
     if not present:
-        raise SystemExit(f"No release APKs in {built}; build them first.")
+        raise SystemExit(f"Nothing built for {', '.join(abis)} in {app_dir / 'build'}; build it first.")
     newest = max(p.stat().st_mtime for p in present.values())
     manifest_path = out / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {"files": {}}
@@ -89,7 +97,7 @@ def publish(data_dir: Path, app_dir: Path, notes: str = "", abis: tuple[str, ...
         if newest - src.stat().st_mtime > 3600:  # left over from an older build: don't relabel it
             print(f"skipping {abi}: {src.name} is older than this build", file=sys.stderr)
             continue
-        name = f"songarr-{version}+{build}-{abi}.apk"
+        name = f"songarr-{version}+{build}-{abi}{src.suffix}"
         tmp = out / (name + ".part")
         shutil.copyfile(src, tmp)
         os.replace(tmp, out / name)
@@ -111,7 +119,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("publish", help="offer the APKs just built to the apps")
     p.add_argument("--notes", default="", help="what's new, shown in the app")
-    p.add_argument("--abi", action="append", choices=ABIS, help="only these processor types (default: all built)")
+    p.add_argument("--abi", action="append", choices=ALL,
+                   help="only these (default: the phone APKs built; windows-x64 is the desktop installer)")
     p.add_argument("--data", type=Path, default=DEFAULT_DATA)
     p.add_argument("--app", type=Path, default=PROGRAM_DIR / "app")
     args = ap.parse_args(argv)

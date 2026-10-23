@@ -91,6 +91,7 @@ class _PressableState extends State<Pressable> with SingleTickerProviderStateMix
               _c.reverse();
               widget.onLongPress!();
             },
+      onSecondaryTap: widget.onLongPress, // a right-click (the desktop app) is a long press
       child: ScaleTransition(scale: _scale, child: widget.child),
     );
   }

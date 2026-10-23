@@ -5,6 +5,7 @@ import '../api/client.dart';
 import '../api/models.dart';
 import '../state/brand.dart';
 import '../state/data.dart';
+import '../state/desktop.dart';
 import '../state/offline.dart';
 import '../state/player.dart';
 import '../state/session.dart';
@@ -62,7 +63,7 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const GradientMask(child: Icon(Icons.podcasts_rounded)),
             title: const Text('Podcast episodes', style: TextStyle(fontWeight: FontWeight.w700)),
-            subtitle: Text('${offline.episodes.length} on this phone · ${formatBytes(offline.episodeBytes)} · '
+            subtitle: Text('${offline.episodes.length} on this ${DesktopWindow.device} ·${formatBytes(offline.episodeBytes)} · '
                 'removed once played or when their days run out (set per show)'),
           ),
           ListTile(
@@ -143,7 +144,7 @@ class _AppVersion extends ConsumerWidget {
                 ? 'Version ${update.version} is ready to install'
                 : 'Downloading version ${update.version}…';
     return ListTile(
-      leading: const GradientMask(child: Icon(Icons.system_update_rounded)),
+      leading: GradientMask(child: DesktopWindow.isDesktop ? const Icon(Icons.update_rounded) : const Icon(Icons.system_update_rounded)),
       title: Text('${ref.watch(brandProvider).name} ${u.version.isEmpty ? '' : u.version}', style: const TextStyle(fontWeight: FontWeight.w700)),
       subtitle: Text('$status\nUpdates come from your ${ref.watch(brandProvider).name} server.'),
       isThreeLine: true,

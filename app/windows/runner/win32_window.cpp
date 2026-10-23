@@ -16,7 +16,8 @@ namespace {
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
-constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
+// Songarr's own (so a second copy finds the first: main.cpp)
+constexpr const wchar_t kWindowClassName[] = L"SONGARR_DESKTOP_WINDOW";
 
 /// Registry key for app theme preference.
 ///
@@ -216,6 +217,15 @@ Win32Window::MessageHandler(HWND hwnd,
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
+
+    case WM_GETMINMAXINFO: {
+      // No smaller than a phone's screen: narrow, it lays itself out like the phone app.
+      auto info = reinterpret_cast<MINMAXINFO*>(lparam);
+      double scale = FlutterDesktopGetDpiForMonitor(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)) / 96.0;
+      info->ptMinTrackSize.x = static_cast<LONG>(400 * scale);
+      info->ptMinTrackSize.y = static_cast<LONG>(600 * scale);
+      return 0;
+    }
   }
 
   return DefWindowProc(window_handle_, message, wparam, lparam);

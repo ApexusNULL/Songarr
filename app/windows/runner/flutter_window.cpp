@@ -1,8 +1,25 @@
 #include "flutter_window.h"
 
+#include <flutter/standard_method_codec.h>
+
 #include <optional>
+#include <string>
 
 #include "flutter/generated_plugin_registrant.h"
+
+namespace {
+
+std::wstring Utf16FromUtf8(const std::string& text) {
+  if (text.empty()) {
+    return std::wstring();
+  }
+  int length = ::MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+  std::wstring out(length, L'\0');
+  ::MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), length);
+  return out;
+}
+
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -27,6 +44,20 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  window_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "songarr/window",
+      &flutter::StandardMethodCodec::GetInstance());
+  window_channel_->SetMethodCallHandler([this](const auto& call, auto result) {
+    if (call.method_name() == "setTitle") {
+      if (const auto* title = std::get_if<std::string>(call.arguments())) {
+        ::SetWindowTextW(GetHandle(), Utf16FromUtf8(*title).c_str());
+      }
+      result->Success();
+    } else {
+      result->NotImplemented();
+    }
+  });
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -40,6 +71,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  window_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

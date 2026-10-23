@@ -11,6 +11,7 @@ import '../state/data.dart';
 import '../state/jam.dart';
 import '../state/session.dart';
 import '../state/offline.dart';
+import '../state/desktop.dart';
 import '../state/player.dart';
 import '../state/push.dart';
 import '../state/updates.dart';
@@ -134,7 +135,26 @@ class _ShellState extends ConsumerState<Shell> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
+    // A wide window (the desktop app): the tabs down the side, the player along the bottom.
+    final wide = MediaQuery.sizeOf(context).width >= SideNav.breakpoint;
+    final pages = IndexedStack(index: _tab, children: [
+      _tabNavigator(0, const HomeScreen()),
+      _tabNavigator(1, const SearchScreen()),
+      _tabNavigator(2, const LibraryScreen()),
+    ]);
+    final player = ref.read(playerProvider);
+    return CallbackShortcuts(
+      bindings: !DesktopWindow.isDesktop
+          ? const {}
+          : {
+              const SingleActivator(LogicalKeyboardKey.space): player.togglePlay,
+              const SingleActivator(LogicalKeyboardKey.mediaPlayPause): player.togglePlay,
+              const SingleActivator(LogicalKeyboardKey.mediaTrackNext): player.next,
+              const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): player.previous,
+              const SingleActivator(LogicalKeyboardKey.arrowRight, control: true): player.next,
+              const SingleActivator(LogicalKeyboardKey.arrowLeft, control: true): player.previous,
+            },
+      child: Focus(autofocus: true, child: PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
@@ -150,22 +170,82 @@ class _ShellState extends ConsumerState<Shell> {
         extendBody: true,
         body: Stack(children: [
           const Positioned.fill(child: NebulaBackground()),
-          IndexedStack(index: _tab, children: [
-            _tabNavigator(0, const HomeScreen()),
-            _tabNavigator(1, const SearchScreen()),
-            _tabNavigator(2, const LibraryScreen()),
-          ]),
+          if (wide) Row(children: [SideNav(index: _tab, onSelect: _select), Expanded(child: pages)]) else pages,
         ]),
         bottomNavigationBar: SafeArea(
           top: false,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const MiniPlayer(),
-            FloatingTabBar(index: _tab, onSelect: _select),
+            Padding(padding: EdgeInsets.only(left: wide ? SideNav.width : 0), child: const MiniPlayer()),
+            if (wide) const SizedBox(height: 10) else FloatingTabBar(index: _tab, onSelect: _select),
           ]),
         ),
       ),
-    );
+    )));
   }
+}
+
+/// The tabs down the side, on a wide window (the desktop app).
+class SideNav extends ConsumerWidget {
+  const SideNav({super.key, required this.index, required this.onSelect});
+  final int index;
+  final ValueChanged<int> onSelect;
+
+  static const breakpoint = 900.0;
+  static const width = 232.0;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => SafeArea(
+        right: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 0, 100),
+          child: Glass(
+            radius: 24,
+            child: SizedBox(
+              width: width - 16,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 16, 20),
+                  child: GradientMask(
+                    child: Text(ref.watch(brandProvider).name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                  ),
+                ),
+                for (var i = 0; i < FloatingTabBar._items.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+                    child: Semantics(
+                      button: true,
+                      selected: i == index,
+                      label: FloatingTabBar._items[i].$2,
+                      child: Pressable(
+                        scale: 0.97,
+                        onTap: () => onSelect(i),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          height: 48,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: i == index
+                                ? LinearGradient(colors: [accent.withValues(alpha: 0.38), accent2.withValues(alpha: 0.26)])
+                                : null,
+                            border: Border.all(color: i == index ? Colors.white.withValues(alpha: 0.14) : Colors.transparent),
+                          ),
+                          child: Row(children: [
+                            Icon(FloatingTabBar._items[i].$1, color: i == index ? Colors.white : muted, size: 22),
+                            const SizedBox(width: 14),
+                            Text(FloatingTabBar._items[i].$2,
+                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: i == index ? Colors.white : muted)),
+                          ]),
+                        ),
+                      ),
+                    ),
+                  ),
+              ]),
+            ),
+          ),
+        ),
+      );
 }
 
 class FloatingTabBar extends StatelessWidget {

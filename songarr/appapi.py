@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 
 MIME = {".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".opus": "audio/ogg", ".ogg": "audio/ogg", ".flac": "audio/flac",
         ".aac": "audio/aac", ".wav": "audio/wav", ".mp4": "video/mp4", ".mov": "video/quicktime",
-        ".apk": "application/vnd.android.package-archive", ".png": "image/png", ".webp": "image/webp"}
+        ".apk": "application/vnd.android.package-archive", ".exe": "application/vnd.microsoft.portable-executable", ".png": "image/png", ".webp": "image/webp"}
 MAX_BODY = 64 * 1024
 # what the apps ask by themselves in the background (Jam invites every 20 s...): not someone using
 # Songarr, so they don't hold back an update's restart (Service.last_app_request)
@@ -916,8 +916,8 @@ class AppAPI:
     def app_update(self, user: dict, q: dict, body: dict) -> dict:
         """Is there a newer app for this phone? `build` is the app's build number, `abi` its processor type."""
         abi = q.get("abi") or ""
-        if abi not in app_updates.ABIS:
-            raise ApiError(400, f"abi must be one of {', '.join(app_updates.ABIS)}")
+        if abi not in app_updates.ALL:
+            raise ApiError(400, f"abi must be one of {', '.join(app_updates.ALL)}")
         latest = self.svc.app_updates.latest(abi)
         have = _int(q.get("build"), 0, 0, 10**9)
         return {"available": bool(latest and latest["build"] > have), "update": latest}
@@ -1298,8 +1298,8 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
             if m := re.fullmatch(r"/download/img/([a-z0-9-]+)\.webp", path):
                 shot = download_page.picture(m[1])
                 return self.send_file(shot) if shot else self.not_found()
-            if re.fullmatch(r"/download/[A-Za-z0-9._-]+\.apk", path):
-                abi = qs.get("abi") or download_page.PHONE
+            if re.fullmatch(r"/download/[A-Za-z0-9._-]+\.(?:apk|exe)", path):
+                abi = qs.get("abi") or (download_page.DESKTOP if path.endswith(".exe") else download_page.PHONE)
                 apk = svc.app_updates.apk(abi)
                 if apk is None:
                     return self.not_found()

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/client.dart';
 import '../api/models.dart';
+import 'desktop.dart';
 import 'listen_scores.dart';
 import 'session.dart';
 
@@ -89,6 +90,14 @@ class OfflineStore extends Notifier<OfflineState> {
     _downloadsDir = Directory('${support.path}/downloads')..createSync(recursive: true);
     _episodesDir = Directory('${support.path}/episodes')..createSync(recursive: true);
     _cacheDir = Directory('${cache.path}/stream-cache')..createSync(recursive: true);
+    if (DesktopWindow.isDesktop) {
+      // left by the caching player a computer no longer uses (see PlayerController._source)
+      for (final f in _cacheDir.listSync().whereType<File>().where((f) => f.path.endsWith('.part'))) {
+        try {
+          f.deleteSync();
+        } catch (_) {}
+      }
+    }
     _listsDir = Directory('${support.path}/lists')..createSync(recursive: true);
     _scoresFile = File('${support.path}/listen_scores.json');
     if (_scoresFile.existsSync()) {
@@ -257,7 +266,7 @@ class OfflineStore extends Notifier<OfflineState> {
     for (final t in tracks) {
       if (!upcoming.contains(t.id)) return; // the queue moved on meanwhile
       if (t.isEpisode || t.isPreview || !t.playable || localFile(t) != null || _fetching.contains(t.id)) continue;
-      if (File('${cachePath(t)}.part').existsSync()) continue; // the player is streaming it right now
+      if (!DesktopWindow.isDesktop && File('${cachePath(t)}.part').existsSync()) continue; // the player is streaming it right now
       _fetching.add(t.id);
       final partial = '${cachePath(t)}.ahead';
       try {

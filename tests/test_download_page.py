@@ -47,8 +47,9 @@ class DownloadPageTests(unittest.TestCase):
         files, out = {}, {}
         for abi in abis:
             data = f"apk for {abi}".encode() * 100
-            (folder / f"songarr-1.8.0+22-{abi}.apk").write_bytes(data)
-            files[abi] = {"file": f"songarr-1.8.0+22-{abi}.apk", "version": "1.8.0", "build": 22, "notes": "",
+            ext = "exe" if abi == "windows-x64" else "apk"
+            (folder / f"songarr-1.8.0+22-{abi}.{ext}").write_bytes(data)
+            files[abi] = {"file": f"songarr-1.8.0+22-{abi}.{ext}", "version": "1.8.0", "build": 22, "notes": "",
                           "published": time.time(), "size": len(data), "sha256": "x"}
             out[abi] = data
         (folder / "manifest.json").write_text(json.dumps({"files": files}))
@@ -92,6 +93,18 @@ class DownloadPageTests(unittest.TestCase):
         self.assertEqual((status, headers["Content-Type"], body[:4]), (200, "image/webp", b"RIFF"))
         for bad in ("/download/img/nope.webp", "/download/img/..%2f..%2fdb.webp", "/download/../api/v1/me", "/download/icon.png"):
             self.assertEqual(self.get(bad)[0], 404, bad)  # icon.png: Songarr's own icon is drawn in the page
+
+    def test_the_desktop_app_too(self):
+        files = self.publish("arm64-v8a", "windows-x64")
+        page = self.get("/download")[2].decode()
+        self.assertIn("/download/Songarr-1.8.0-Setup.exe?abi=windows-x64", page)
+        self.assertIn("Download Songarr for Windows", page)
+        status, headers, body = self.get("/download/Songarr-1.8.0-Setup.exe?abi=windows-x64")
+        self.assertEqual((status, body), (200, files["windows-x64"]))
+        self.assertEqual(headers["Content-Disposition"], 'attachment; filename="Songarr-1.8.0-Setup.exe"')
+        self.assertEqual(self.get("/download/Songarr-1.8.0-Setup.exe")[2], files["windows-x64"])  # an .exe is the desktop app
+        self.publish("arm64-v8a")
+        self.assertNotIn("for Windows", self.get("/download")[2].decode())  # not offered until it's published
 
     def test_nothing_published_yet(self):
         status, _, body = self.get("/download")

@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.songarr" "\0"
-            VALUE "FileDescription", "songarr_app" "\0"
+            VALUE "CompanyName", "Songarr" "\0"
+            VALUE "FileDescription", "Songarr" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "songarr_app" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.songarr. All rights reserved." "\0"
-            VALUE "OriginalFilename", "songarr_app.exe" "\0"
-            VALUE "ProductName", "songarr_app" "\0"
+            VALUE "InternalName", "Songarr" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Songarr contributors" "\0"
+            VALUE "OriginalFilename", "Songarr.exe" "\0"
+            VALUE "ProductName", "Songarr" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
