@@ -11,6 +11,7 @@ import '../state/jam.dart';
 import '../state/offline.dart';
 import '../state/player.dart';
 import 'fx/colors.dart';
+import 'fx/clock.dart';
 import 'fx/motion.dart';
 import 'fx/nebula.dart';
 import 'fx/sparkle.dart';
@@ -274,7 +275,8 @@ class _NowPlaying extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: StreamBuilder<Duration>(
-                stream: p.positionStream,
+                stream: c.positionEverySecond, // (the bar glides on between)
+                initialData: p.position,
                 builder: (context, ps) {
                   final total = p.duration ?? t.duration;
                   final pos = (ps.data ?? Duration.zero) > total ? total : (ps.data ?? Duration.zero);
@@ -407,33 +409,16 @@ class _BreathingArt extends StatefulWidget {
   State<_BreathingArt> createState() => _BreathingArtState();
 }
 
-class _BreathingArtState extends State<_BreathingArt> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 3600));
+class _BreathingArtState extends State<_BreathingArt> with FxUser {
+  double _breath = 0; // 0..1, held where it is while paused
 
   @override
-  void initState() {
-    super.initState();
-    _sync();
-  }
+  bool get wantsClock => widget.playing;
 
   @override
   void didUpdateWidget(_BreathingArt old) {
     super.didUpdateWidget(old);
-    _sync();
-  }
-
-  void _sync() {
-    if (widget.playing && !_c.isAnimating) {
-      _c.repeat(reverse: true);
-    } else if (!widget.playing && _c.isAnimating) {
-      _c.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
+    syncClock();
   }
 
   @override
@@ -444,9 +429,13 @@ class _BreathingArtState extends State<_BreathingArt> with SingleTickerProviderS
       duration: const Duration(milliseconds: 600),
       curve: Curves.easeOutBack,
       child: AnimatedBuilder(
-        animation: _c,
+        animation: FxClock.instance,
         builder: (context, child) {
-          final v = Curves.easeInOut.transform(_c.value);
+          if (holdingClock) {
+            final phase = FxClock.instance.seconds / 3.6 % 2; // in for 3.6 s, out for 3.6 s
+            _breath = phase <= 1 ? phase : 2 - phase;
+          }
+          final v = Curves.easeInOut.transform(_breath);
           return Transform.scale(
             scale: 1 + 0.015 * v,
             child: Container(

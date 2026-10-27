@@ -1,15 +1,15 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 
 import '../theme.dart';
+import 'clock.dart';
 import 'tilt.dart';
 
 /// The app's backdrop: soft aurora clouds drifting through deep space, with faint twinkling
-/// stars. Drawn at up to 30 frames a second and paused when the app isn't visible or the
-/// system asks for reduced motion. Turning the phone shifts the clouds and stars by their depth
-/// (see [Tilt]), so the backdrop looks like deep space behind the screen.
+/// stars. It moves with [FxClock] (a few frames a second, resting when the screen isn't being
+/// touched). Turning the phone shifts the clouds and stars by their depth (see [Tilt]), so the
+/// backdrop looks like deep space behind the screen.
 class NebulaBackground extends StatefulWidget {
   const NebulaBackground({super.key, this.tint, this.intensity = 1.0});
 
@@ -21,54 +21,10 @@ class NebulaBackground extends StatefulWidget {
   State<NebulaBackground> createState() => _NebulaBackgroundState();
 }
 
-class _NebulaBackgroundState extends State<NebulaBackground> with SingleTickerProviderStateMixin, WidgetsBindingObserver, TiltUser {
-  late final Ticker _ticker = createTicker(_tick);
-  final _time = ValueNotifier<double>(0);
-  Duration _lastFrame = Duration.zero;
-  double _offset = Random().nextDouble() * 100; // each launch starts somewhere new
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final still = MediaQuery.disableAnimationsOf(context);
-    if (still && _ticker.isActive) _ticker.stop();
-    if (!still && !_ticker.isActive) _ticker.start();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      if (!_ticker.isActive && !MediaQuery.disableAnimationsOf(context)) _ticker.start();
-    } else if (_ticker.isActive) {
-      _offset = _time.value;
-      _lastFrame = Duration.zero;
-      _ticker.stop();
-    }
-  }
-
-  void _tick(Duration elapsed) {
-    if (elapsed - _lastFrame < const Duration(milliseconds: 33)) return;
-    _lastFrame = elapsed;
-    _time.value = _offset + elapsed.inMicroseconds / 1e6;
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _ticker.dispose();
-    _time.dispose();
-    super.dispose();
-  }
-
+class _NebulaBackgroundState extends State<NebulaBackground> with FxUser, TiltUser {
   @override
   Widget build(BuildContext context) => RepaintBoundary(
-        child: CustomPaint(painter: _NebulaPainter(_time, widget.tint, widget.intensity), size: Size.infinite),
+        child: CustomPaint(painter: _NebulaPainter(FxClock.instance, widget.tint, widget.intensity), size: Size.infinite),
       );
 }
 
@@ -95,14 +51,14 @@ const _cloudShift = 26.0;
 final _stars = List.generate(90, (i) => _Star(Random(i * 7919 + 13)));
 
 class _NebulaPainter extends CustomPainter {
-  _NebulaPainter(this.time, this.tint, this.intensity) : super(repaint: time);
-  final ValueNotifier<double> time;
+  _NebulaPainter(this.clock, this.tint, this.intensity) : super(repaint: clock);
+  final FxClock clock;
   final Color? tint;
   final double intensity;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final t = time.value;
+    final t = clock.seconds;
     final tilt = Tilt.instance.value; // things behind the screen shift against the turn
     final full = Offset.zero & size;
     canvas.drawRect(full, Paint()..color = background);

@@ -5,6 +5,7 @@ import '../api/client.dart';
 import '../api/models.dart';
 import '../state/jam.dart';
 import '../state/session.dart';
+import 'fx/clock.dart';
 import 'fx/motion.dart';
 import 'fx/sparkle.dart';
 import 'theme.dart';
@@ -184,18 +185,14 @@ class _LiveDot extends StatefulWidget {
   State<_LiveDot> createState() => _LiveDotState();
 }
 
-class _LiveDotState extends State<_LiveDot> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..repeat(reverse: true);
-
+class _LiveDotState extends State<_LiveDot> with FxUser {
   @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => FadeTransition(
-        opacity: Tween(begin: 0.4, end: 1.0).animate(_c),
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: FxClock.instance,
+        builder: (context, child) {
+          final phase = FxClock.instance.seconds / 1.2 % 2;
+          return Opacity(opacity: 0.4 + 0.6 * (phase <= 1 ? phase : 2 - phase), child: child);
+        },
         child: Container(
           width: 10,
           height: 10,

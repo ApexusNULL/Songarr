@@ -14,6 +14,7 @@ import '../state/player.dart';
 import '../state/session.dart';
 import 'artist_about.dart';
 import 'fx/colors.dart';
+import 'fx/clock.dart';
 import 'fx/motion.dart';
 import 'fx/sparkle.dart';
 import 'reorder_songs_screen.dart';
@@ -354,26 +355,15 @@ class _Floating extends StatefulWidget {
   State<_Floating> createState() => _FloatingState();
 }
 
-class _FloatingState extends State<_Floating> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(seconds: 4));
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!MediaQuery.disableAnimationsOf(context) && !_c.isAnimating) _c.repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
+class _FloatingState extends State<_Floating> with FxUser {
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: _c,
+        animation: FxClock.instance,
         child: widget.child,
-        builder: (context, child) => Transform.translate(offset: Offset(0, -5 * Curves.easeInOut.transform(_c.value)), child: child),
+        builder: (context, child) {
+          final phase = FxClock.instance.seconds / 4 % 2; // up for 4 s, down for 4 s
+          return Transform.translate(offset: Offset(0, -5 * Curves.easeInOut.transform(phase <= 1 ? phase : 2 - phase)), child: child);
+        },
       );
 }
 

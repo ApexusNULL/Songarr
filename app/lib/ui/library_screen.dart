@@ -10,6 +10,7 @@ import '../state/offline.dart';
 import '../state/player.dart';
 import '../state/session.dart';
 import 'arrange_playlists_screen.dart';
+import 'fx/clock.dart';
 import 'fx/motion.dart';
 import 'podcast_screen.dart';
 import 'settings_screen.dart';
@@ -265,7 +266,9 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 20), (_) => ref.invalidate(requestsProvider));
+    _timer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted && showing(context)) ref.invalidate(requestsProvider); // (not unseen, in the background)
+    });
   }
 
   @override

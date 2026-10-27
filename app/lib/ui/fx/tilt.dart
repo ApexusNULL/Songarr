@@ -6,6 +6,8 @@ import 'package:flutter/widgets.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'clock.dart';
+
 /// Which way the phone is being turned, for the depth effect: stars and clouds behind the screen
 /// drift one way and sparkles in front drift the other, like looking through a window into space.
 ///
@@ -15,10 +17,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// [response]) on each axis: x when the phone turns to the right (right edge away from you), y when
 /// it tips back (top edge toward you).
 ///
-/// The sensor only runs while something on screen uses it ([attach]) and the app is in front.
+/// The sensor only runs while something on screen uses it ([attach]), the app is in front and the
+/// effects are awake ([FxClock]: not once the screen has been left alone a while).
 class Tilt extends ValueNotifier<Offset> with WidgetsBindingObserver {
   Tilt._() : super(Offset.zero) {
     WidgetsBinding.instance.addObserver(this);
+    FxClock.instance.running.addListener(_update);
     SharedPreferences.getInstance().then((p) => enabled = p.getBool(_pref) ?? true).catchError((_) => true);
   }
 
@@ -76,10 +80,11 @@ class Tilt extends ValueNotifier<Offset> with WidgetsBindingObserver {
   }
 
   void _update() {
-    final run = supported && _enabled && _front && _users > 0;
+    final run = supported && _enabled && _front && _users > 0 && FxClock.instance.running.value;
     if (run && _gyro == null) {
       _last = null;
-      _gyro = gyroscopeEventStream(samplingPeriod: SensorInterval.gameInterval).listen(_onTurn, onError: (Object _) => _stop());
+      // (about 15 readings a second: the effects move 20 times a second at most)
+      _gyro = gyroscopeEventStream(samplingPeriod: SensorInterval.uiInterval).listen(_onTurn, onError: (Object _) => _stop());
     } else if (!run && _gyro != null) {
       _stop();
     }

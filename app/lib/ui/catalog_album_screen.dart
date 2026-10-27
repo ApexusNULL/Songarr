@@ -9,6 +9,7 @@ import '../state/data.dart';
 import '../state/player.dart';
 import '../state/session.dart';
 import 'fx/colors.dart';
+import 'fx/clock.dart';
 import 'fx/motion.dart';
 import 'preview_sheet.dart';
 import 'theme.dart';
@@ -40,7 +41,9 @@ class _CatalogAlbumScreenState extends ConsumerState<CatalogAlbumScreen> {
   void _watch(CatalogAlbumPage page) {
     final waiting = page.tracks.any((t) => t.inLibrary != null && t.status != 'downloaded');
     if (waiting && _refresh == null) {
-      _refresh = Timer.periodic(const Duration(seconds: 20), (_) => ref.invalidate(catalogAlbumProvider(_key)));
+      _refresh = Timer.periodic(const Duration(seconds: 20), (_) {
+        if (mounted && showing(context)) ref.invalidate(catalogAlbumProvider(_key)); // (not unseen, in the background)
+      });
     } else if (!waiting) {
       _refresh?.cancel();
       _refresh = null;

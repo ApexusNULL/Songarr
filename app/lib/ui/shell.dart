@@ -137,10 +137,10 @@ class _ShellState extends ConsumerState<Shell> {
   Widget build(BuildContext context) {
     // A wide window (the desktop app): the tabs down the side, the player along the bottom.
     final wide = MediaQuery.sizeOf(context).width >= SideNav.breakpoint;
+    // (the tabs not showing are kept, but their animations and timers rest: see showing())
     final pages = IndexedStack(index: _tab, children: [
-      _tabNavigator(0, const HomeScreen()),
-      _tabNavigator(1, const SearchScreen()),
-      _tabNavigator(2, const LibraryScreen()),
+      for (final (i, root) in const [HomeScreen(), SearchScreen(), LibraryScreen()].indexed)
+        TickerMode(enabled: i == _tab, child: _tabNavigator(i, root)),
     ]);
     final player = ref.read(playerProvider);
     return CallbackShortcuts(

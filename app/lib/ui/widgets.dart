@@ -12,6 +12,7 @@ import '../state/jam.dart';
 import '../state/offline.dart';
 import '../state/player.dart';
 import '../state/session.dart';
+import 'fx/clock.dart';
 import 'fx/motion.dart';
 import 'fx/sparkle.dart';
 import 'jam_sheet.dart';
@@ -655,7 +656,8 @@ class MiniPlayer extends ConsumerWidget {
                               ]),
                             ),
                             StreamBuilder<Duration>(
-                              stream: c.player.positionStream,
+                              stream: c.positionEverySecond,
+                              initialData: c.player.position,
                               builder: (context, p) => Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 14),
                                 child: SparkleBar(
@@ -693,31 +695,35 @@ class SpinningDisc extends StatefulWidget {
   State<SpinningDisc> createState() => _SpinningDiscState();
 }
 
-class _SpinningDiscState extends State<SpinningDisc> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(seconds: 14));
+class _SpinningDiscState extends State<SpinningDisc> with FxUser {
+  double _turn = 0; // where it stopped (a pause leaves it there)
+  double? _from;
 
   @override
-  void initState() {
-    super.initState();
-    if (widget.spinning) _c.repeat();
-  }
+  bool get wantsClock => widget.spinning;
 
   @override
   void didUpdateWidget(SpinningDisc old) {
     super.didUpdateWidget(old);
-    if (widget.spinning && !_c.isAnimating && !MediaQuery.disableAnimationsOf(context)) _c.repeat();
-    if (!widget.spinning && _c.isAnimating) _c.stop();
+    syncClock();
+  }
+
+  /// One turn every 14 seconds of motion.
+  double get _turns {
+    if (!holdingClock) {
+      _from = null;
+      return _turn;
+    }
+    final now = FxClock.instance.seconds;
+    _turn = (_turn + (_from == null ? 0 : now - _from!) / 14) % 1;
+    _from = now;
+    return _turn;
   }
 
   @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => RotationTransition(
-        turns: _c,
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: FxClock.instance,
+        builder: (context, child) => Transform.rotate(angle: _turns * 2 * pi, child: child),
         child: Container(
           width: widget.size,
           height: widget.size,

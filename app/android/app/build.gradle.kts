@@ -73,3 +73,8 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // the media session classes, for SongarrMediaKeys (the same version audio_service uses)
+    implementation("androidx.media:media:1.7.0")
+}

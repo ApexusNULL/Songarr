@@ -13,6 +13,7 @@ import '../state/session.dart';
 import '../state/updates.dart';
 import 'catalog_album_screen.dart';
 import 'notifications_screen.dart';
+import 'fx/clock.dart';
 import 'fx/motion.dart';
 import 'fx/sparkle.dart';
 import 'podcast_screen.dart';
@@ -49,7 +50,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Recommendations are prepared in the background on first use; look again shortly.
     final preparing = home.value != null && home.value!.forYou == null;
     if (preparing && _waiting == null) {
-      _waiting = Timer.periodic(const Duration(seconds: 15), (_) => ref.invalidate(homeProvider));
+      _waiting = Timer.periodic(const Duration(seconds: 15), (_) {
+        if (mounted && showing(context)) ref.invalidate(homeProvider); // (not unseen, in the background)
+      });
     } else if (!preparing && home.value != null) {
       _waiting?.cancel();
       _waiting = null;

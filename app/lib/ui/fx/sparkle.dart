@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../theme.dart';
+import 'clock.dart';
 import 'tilt.dart';
 
 /// A tiny particle system for sparkles: glowing dots and four-pointed glints that drift,
@@ -112,27 +113,30 @@ class SparkleBar extends StatefulWidget {
   State<SparkleBar> createState() => _SparkleBarState();
 }
 
-class _SparkleBarState extends State<SparkleBar> with SingleTickerProviderStateMixin {
-  late final Ticker _ticker = createTicker(_tick);
+class _SparkleBarState extends State<SparkleBar> with FxUser {
   final _field = ParticleField();
   final _repaint = ValueNotifier<int>(0);
   final _clock = Stopwatch()..start();
-  Duration _lastTick = Duration.zero;
+  double? _lastTick;
   double _debt = 0;
   double _time = 0;
   Size _size = Size.zero;
   double? _drag; // 0..1 while the finger is down
 
-  // The player reports position a few times a second; in between, the head glides on.
+  // The player reports position now and then; in between (while the effects are awake), the head glides on.
   Duration _base = Duration.zero;
   int _baseAt = 0;
 
   bool get _still => MediaQuery.disableAnimationsOf(context);
 
   @override
+  bool get wantsClock => widget.playing || _field.particles.isNotEmpty || _drag != null;
+
+  @override
   void initState() {
     super.initState();
     _rebase();
+    FxClock.instance.addListener(_tick);
   }
 
   void _rebase() {
@@ -153,27 +157,21 @@ class _SparkleBarState extends State<SparkleBar> with SingleTickerProviderStateM
   void didUpdateWidget(SparkleBar old) {
     super.didUpdateWidget(old);
     _rebase();
-    _wake();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _wake();
+    syncClock();
   }
 
   void _wake() {
-    if ((widget.playing && !_still || _field.particles.isNotEmpty || _drag != null) && !_ticker.isActive) {
-      _lastTick = Duration.zero;
-      _ticker.start();
-    }
+    _lastTick = null;
+    syncClock();
   }
 
   Offset get _head => Offset(fraction * _size.width, _size.height / 2);
 
-  void _tick(Duration elapsed) {
-    final dt = _lastTick == Duration.zero ? 1 / 60 : ((elapsed - _lastTick).inMicroseconds / 1e6).clamp(0.0, 0.05);
-    _lastTick = elapsed;
+  void _tick() {
+    if (!holdingClock) return;
+    final now = FxClock.instance.seconds;
+    final dt = _lastTick == null ? 1 / FxClock.fps : (now - _lastTick!).clamp(0.0, 0.1);
+    _lastTick = now;
     _time += dt;
     if (widget.playing && !_still && _size.width > 0) {
       _debt += dt * widget.sparklesPerSecond;
@@ -186,7 +184,7 @@ class _SparkleBarState extends State<SparkleBar> with SingleTickerProviderStateM
     }
     _field.step(dt, gravity: -10, drag: 1.6);
     _repaint.value++;
-    if (!widget.playing && _field.isEmpty && _drag == null) _ticker.stop();
+    if (!wantsClock) syncClock();
   }
 
   void _burst() {
@@ -208,7 +206,7 @@ class _SparkleBarState extends State<SparkleBar> with SingleTickerProviderStateM
 
   @override
   void dispose() {
-    _ticker.dispose();
+    FxClock.instance.removeListener(_tick);
     _repaint.dispose();
     super.dispose();
   }
@@ -316,26 +314,25 @@ class AmbientSparkles extends StatefulWidget {
   State<AmbientSparkles> createState() => _AmbientSparklesState();
 }
 
-class _AmbientSparklesState extends State<AmbientSparkles> with SingleTickerProviderStateMixin, TiltUser {
-  late final Ticker _ticker = createTicker(_tick);
+class _AmbientSparklesState extends State<AmbientSparkles> with FxUser, TiltUser {
   final _field = ParticleField();
   final _repaint = ValueNotifier<int>(0);
   Size _size = Size.zero;
-  Duration _last = Duration.zero;
+  double? _last;
   double _debt = 0;
   double _time = 0;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final still = MediaQuery.disableAnimationsOf(context);
-    if (still && _ticker.isActive) _ticker.stop();
-    if (!still && !_ticker.isActive) _ticker.start();
+  void initState() {
+    super.initState();
+    FxClock.instance.addListener(_tick);
   }
 
-  void _tick(Duration elapsed) {
-    final dt = _last == Duration.zero ? 1 / 60 : ((elapsed - _last).inMicroseconds / 1e6).clamp(0.0, 0.05);
-    _last = elapsed;
+  void _tick() {
+    if (!holdingClock) return;
+    final now = FxClock.instance.seconds;
+    final dt = _last == null ? 1 / FxClock.fps : (now - _last!).clamp(0.0, 0.1);
+    _last = now;
     _time += dt;
     if (_size.width > 0) {
       _debt += dt * widget.perSecond;
@@ -353,7 +350,7 @@ class _AmbientSparklesState extends State<AmbientSparkles> with SingleTickerProv
 
   @override
   void dispose() {
-    _ticker.dispose();
+    FxClock.instance.removeListener(_tick);
     _repaint.dispose();
     super.dispose();
   }

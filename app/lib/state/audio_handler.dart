@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -17,7 +19,10 @@ import 'desktop.dart';
 class SongarrAudioHandler extends BaseAudioHandler with SeekHandler {
   SongarrAudioHandler() {
     player.playbackEventStream.listen((_) => _broadcast(), onError: (Object _, StackTrace _) => _broadcast());
-    player.playingStream.listen((_) => _broadcast());
+    player.playingStream.listen((playing) {
+      _broadcast();
+      if (playing) ownKeys(); // (the system's media service may have been made afresh since)
+    });
     player.speedStream.listen((_) => _broadcast());
     player.currentIndexStream.listen((_) => _publishItem());
     player.durationStream.listen((_) => _publishItem());
@@ -36,6 +41,14 @@ class SongarrAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> Function(Duration position)? onSeek;
 
   List<MediaItem> _items = const [];
+
+  static const _media = MethodChannel('songarr/media');
+
+  /// A "pause" from Bluetooth, a car or a watch only pauses, and a "play" only plays: audio_service
+  /// hands both over as a play/pause click (android/.../SongarrMediaKeys.java takes them first).
+  void ownKeys() {
+    if (Platform.isAndroid) _media.invokeMethod<bool>('ownKeys').catchError((Object _) => false);
+  }
 
   Future<void> _configureSession() async {
     try {
@@ -66,9 +79,24 @@ class SongarrAudioHandler extends BaseAudioHandler with SeekHandler {
 
   bool get _episode => mediaItem.value?.extras?['episode'] == true;
 
+  // What the system last heard, and where the song was then. While it reads ahead, the player
+  // reports "buffered a bit more" every half second; each report used to reach the notification,
+  // the lock screen, Bluetooth and the car, waking them all for nothing they show. Now only real
+  // changes go out (playing, the song, a seek...); in between they work the position out themselves.
+  Object? _said;
+  (Duration, DateTime)? _saidAt;
+
   void _broadcast() {
     final playing = player.playing;
     final episode = _episode;
+    final said = (playing, episode, player.processingState, player.speed, player.currentIndex);
+    final position = player.position, now = DateTime.now(), at = _saidAt;
+    if (said == _said && at != null) {
+      final expected = at.$1 + (playing ? now.difference(at.$2) * player.speed : Duration.zero);
+      if ((position - expected).abs() < const Duration(milliseconds: 1500)) return;
+    }
+    _said = said;
+    _saidAt = (position, now);
     final controls = [
       episode ? MediaControl.rewind : MediaControl.skipToPrevious,
       playing ? MediaControl.pause : MediaControl.play,

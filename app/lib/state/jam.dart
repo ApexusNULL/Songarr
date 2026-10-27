@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -31,7 +32,11 @@ class JamController extends Notifier<JamState> implements JamLink {
   @override
   JamState build() {
     ref.watch(apiProvider); // signing out (or into another server) starts afresh
-    _invitePoll = Timer.periodic(const Duration(seconds: 20), (_) => refresh());
+    // Only while the app is in front: invites reach a phone in the background by push, and the app
+    // looks again as soon as it comes back (a poll in the background kept the radio awake all day).
+    _invitePoll = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) refresh();
+    });
     ref.onDispose(() {
       _invitePoll?.cancel();
       _stopFollowing();

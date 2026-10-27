@@ -9,6 +9,7 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -72,6 +73,22 @@ class MainActivity : AudioServiceActivity() {
                 val png = java.io.ByteArrayOutputStream()
                 bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, png)
                 result.success(png.toByteArray())
+            } else {
+                result.notImplemented()
+            }
+        }
+        // A "pause" key only pauses, a "play" only plays (see SongarrMediaKeys).
+        MethodChannel(messenger, "songarr/media").setMethodCallHandler { call, result ->
+            if (call.method == "ownKeys") {
+                result.success(com.ryanheise.audioservice.SongarrMediaKeys.install())
+            } else {
+                result.notImplemented()
+            }
+        }
+        // Battery Saver: while it's on, the app's moving effects stay still (lib/ui/fx/clock.dart).
+        MethodChannel(messenger, "songarr/power").setMethodCallHandler { call, result ->
+            if (call.method == "saving") {
+                result.success(getSystemService(PowerManager::class.java)?.isPowerSaveMode ?: false)
             } else {
                 result.notImplemented()
             }

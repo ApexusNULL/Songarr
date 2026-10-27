@@ -4,6 +4,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'clock.dart';
 
 /// Frosted glass: blurs whatever is behind it (use blur sparingly: it costs a little per frame).
 class Glass extends StatelessWidget {
@@ -159,33 +160,22 @@ class EqualizerBars extends StatefulWidget {
   State<EqualizerBars> createState() => _EqualizerBarsState();
 }
 
-class _EqualizerBarsState extends State<EqualizerBars> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
-
+class _EqualizerBarsState extends State<EqualizerBars> with FxUser {
   @override
-  void initState() {
-    super.initState();
-    if (widget.playing) _c.repeat();
-  }
+  bool get wantsClock => widget.playing;
 
   @override
   void didUpdateWidget(EqualizerBars old) {
     super.didUpdateWidget(old);
-    if (widget.playing && !_c.isAnimating) _c.repeat();
-    if (!widget.playing && _c.isAnimating) _c.stop();
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
+    syncClock();
   }
 
   @override
   Widget build(BuildContext context) => GradientMask(
         child: AnimatedBuilder(
-          animation: _c,
-          builder: (context, _) => CustomPaint(size: Size.square(widget.size), painter: _BarsPainter(_c.value, widget.playing)),
+          animation: FxClock.instance,
+          builder: (context, _) =>
+              CustomPaint(size: Size.square(widget.size), painter: _BarsPainter(FxClock.instance.seconds / 1.4 % 1, widget.playing)),
         ),
       );
 }
@@ -225,20 +215,12 @@ class ShimmerBox extends StatefulWidget {
   State<ShimmerBox> createState() => _ShimmerBoxState();
 }
 
-class _ShimmerBoxState extends State<ShimmerBox> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
+class _ShimmerBoxState extends State<ShimmerBox> with FxUser {
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: _c,
+        animation: FxClock.instance,
         builder: (context, _) {
-          final x = -1.5 + _c.value * 3;
+          final x = -1.5 + FxClock.instance.seconds / 1.5 % 1 * 3;
           return Container(
             width: widget.width,
             height: widget.height,

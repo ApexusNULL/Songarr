@@ -4,10 +4,12 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/client.dart';
@@ -49,6 +51,8 @@ class PlayerController {
       final p = player.position;
       if (p > Duration.zero) _heard = (current?.id, p);
     });
+    // Going to the background (or the screen off): note everything, shuffle and repeat too.
+    _lifecycle = AppLifecycleListener(onHide: () => unawaited(_saveSession()));
     _subs.addAll([
       player.currentIndexStream.listen(_onIndex),
       player.currentIndexStream.listen((_) => _currentChanges.add(current)),
@@ -62,7 +66,7 @@ class PlayerController {
         }
         final t = current;
         if (t != null && t.isEpisode && !_previewing && (p - _lastSaved).abs() > const Duration(seconds: 30)) _saveEpisode(t, p);
-        if (player.playing) _saveSessionSoon(); // every few seconds, so even a force-close loses little
+        if (player.playing) _saveSpotSoon(); // now and then, so even a force-close loses little
       }),
       player.playingStream.listen((playing) {
         final t = current;
@@ -109,7 +113,13 @@ class PlayerController {
   /// The media session; it owns the one audio player.
   final SongarrAudioHandler handler;
   AudioPlayer get player => handler.player;
+
+  /// Where the song is, once a second: for progress bars and times. (The player's own stream
+  /// reports several times a second, and on screen each report is a redraw.)
+  late final Stream<Duration> positionEverySecond =
+      player.createPositionStream(minPeriod: const Duration(seconds: 1), maxPeriod: const Duration(seconds: 1));
   final _subs = <StreamSubscription>[];
+  AppLifecycleListener? _lifecycle;
   final _messages = StreamController<String>.broadcast();
   final _queueChanges = StreamController<List<Track>>.broadcast();
   final _currentChanges = StreamController<Track?>.broadcast();
@@ -118,6 +128,7 @@ class PlayerController {
     handler.setItems([for (final t in _queue) mediaItemFor(t)]); // what the notification and car show
     _queueChanges.add(queue);
     _currentChanges.add(current);
+    unawaited(_saveSession());
   }
   List<Track> _queue = const [];
 
@@ -646,34 +657,72 @@ class PlayerController {
 
   // -- picking up where you left off ---------------------------------------------------------
 
-  static const _sessionKey = 'last_session';
+  // What's playing is kept in a file of its own, written when it changes (the queue, the song, a
+  // pause, the app going to the background). While music plays only the spot in the song is noted,
+  // in a small file, every [_spotEvery]. (It used to be all of it every 5 seconds, into the app's
+  // settings, which Android writes out whole each time: hundreds of KB a few times a minute, for as
+  // long as music played.)
+  static const _sessionKey = 'last_session'; // (where it was kept before, in the settings)
+  static const _sessionFile = 'last_session.json';
+  static const _spotFile = 'last_spot.json';
   static const _sessionMax = 300; // songs kept around the current one (Liked Songs can run to thousands)
-  DateTime _sessionSaved = DateTime.fromMillisecondsSinceEpoch(0);
+  static const _spotEvery = Duration(seconds: 10);
+  DateTime _spotSaved = DateTime.fromMillisecondsSinceEpoch(0);
   bool _restoring = false;
+  // Nothing is saved until the last session has been looked for: just after starting, the player
+  // says "not playing, nothing queued", which would otherwise wipe what's about to be brought back.
+  bool _restored = false;
   String? _resumedId; // the song brought back paused: only what's heard after reopening counts as a listen
   Duration _resumedFrom = Duration.zero;
 
-  void _saveSessionSoon() {
-    if (DateTime.now().difference(_sessionSaved) > const Duration(seconds: 5)) _saveSession();
+  Future<File> _file(String name) async => File('${(await getApplicationSupportDirectory()).path}/$name');
+
+  Future<void> _write(String name, String text) async {
+    final f = await _file(name), part = File('${f.path}.${DateTime.now().microsecondsSinceEpoch}.part');
+    await part.writeAsString(text);
+    await part.rename(f.path);
+  }
+
+  void _saveSpotSoon() {
+    if (DateTime.now().difference(_spotSaved) > _spotEvery) _saveSpot();
+  }
+
+  /// Where in the song it is, for [restoreLastSession].
+  Future<void> _saveSpot() async {
+    if (_previewing || _restoring || !_restored) return;
+    _spotSaved = DateTime.now();
+    final t = current;
+    if (t == null) return;
+    try {
+      await _write(_spotFile, jsonEncode({
+        'track': t.id,
+        'position_ms': player.position.inMilliseconds,
+        'saved': DateTime.now().millisecondsSinceEpoch,
+      }));
+    } catch (_) {
+      // storage unavailable: the queue's own spot will do
+    }
   }
 
   /// Remember what's playing on this phone: the queue, the song and where in it. Previews aren't
   /// saved (what was playing before them is what comes back).
   Future<void> _saveSession() async {
-    if (_previewing || _restoring) return;
-    _sessionSaved = DateTime.now();
+    if (_previewing || _restoring || !_restored) return;
+    _spotSaved = DateTime.now();
     final session = ref.read(sessionProvider).value;
     final q = queue;
     final i = currentIndex;
     try {
-      final prefs = await SharedPreferences.getInstance();
       if (session == null || q.isEmpty || i == null || i >= q.length) {
-        await prefs.remove(_sessionKey);
+        for (final name in [_sessionFile, _spotFile]) {
+          final f = await _file(name);
+          if (f.existsSync()) await f.delete();
+        }
         return;
       }
       final from = max(0, min(i - 50, q.length - _sessionMax));
       final kept = q.sublist(from, min(q.length, from + _sessionMax));
-      await prefs.setString(_sessionKey, jsonEncode({
+      await _write(_sessionFile, jsonEncode({
         'server': session.server,
         'user': session.userId,
         'queue': [for (final t in kept) t.json],
@@ -683,6 +732,8 @@ class PlayerController {
         'loop': _jamQueue == null ? player.loopMode.index : 0,
         'saved': DateTime.now().millisecondsSinceEpoch,
       }));
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.containsKey(_sessionKey)) await prefs.remove(_sessionKey); // (an older version's copy)
     } catch (_) {
       // storage unavailable: nothing to bring back next time
     }
@@ -691,11 +742,16 @@ class PlayerController {
   /// When the app opens, put back the last queue, paused at the same song and spot. Nothing is
   /// reported as a listen. Does nothing if something is already playing or it was another account.
   Future<void> restoreLastSession() async {
-    if (_queue.isNotEmpty || jam != null) return;
     final session = ref.read(sessionProvider).value;
-    if (session == null) return;
+    if (_queue.isNotEmpty || jam != null || session == null) {
+      _restored = true;
+      return;
+    }
     try {
-      final raw = (await SharedPreferences.getInstance()).getString(_sessionKey);
+      final saved = await _file(_sessionFile);
+      final raw = saved.existsSync()
+          ? await saved.readAsString()
+          : (await SharedPreferences.getInstance()).getString(_sessionKey); // (kept by an older version)
       if (raw == null) return;
       final j = jsonDecode(raw) as Map<String, dynamic>;
       if (j['server'] != session.server || j['user'] != session.userId) return;
@@ -704,6 +760,18 @@ class PlayerController {
       if (tracks.isEmpty || index < 0 || index >= tracks.length || _queue.isNotEmpty || jam != null) return;
       var position = Duration(milliseconds: (j['position_ms'] as num?)?.toInt() ?? 0);
       final t = tracks[index];
+      try {
+        // the spot noted while it played, if that's later and in the same song
+        final spotFile = await _file(_spotFile);
+        if (spotFile.existsSync()) {
+          final spot = jsonDecode(await spotFile.readAsString()) as Map<String, dynamic>;
+          if (spot['track'] == t.id && (spot['saved'] as num? ?? 0) > (j['saved'] as num? ?? 0)) {
+            position = Duration(milliseconds: (spot['position_ms'] as num?)?.toInt() ?? position.inMilliseconds);
+          }
+        }
+      } catch (_) {
+        // unreadable: the queue's own spot
+      }
       if (t.duration > Duration.zero && position >= t.duration - const Duration(seconds: 2)) position = Duration.zero;
       _restoring = true;
       _resumedId = t.id;
@@ -726,6 +794,7 @@ class PlayerController {
       }
     } finally {
       _restoring = false;
+      _restored = true;
     }
   }
 
@@ -809,6 +878,7 @@ class PlayerController {
       s.cancel();
     }
     _heardTimer?.cancel();
+    _lifecycle?.dispose();
     likes.dispose(); // the player belongs to the media session and lives as long as the app
     _messages.close();
     _queueChanges.close();

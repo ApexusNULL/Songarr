@@ -39,6 +39,7 @@ Future<void> main() async {
         rewindInterval: Duration(seconds: 10),
       ),
     );
+    handler.ownKeys();
   } else {
     handler = SongarrAudioHandler(); // desktop: no system media session yet
   }
