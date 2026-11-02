@@ -1067,6 +1067,14 @@ class AppAPI:
         return {"genre_id": int(gid), "tracks": self.annotate(items)}
 
 
+class Server(ThreadingHTTPServer):
+    # Python waits on only 5 connections not yet taken up, and Windows refuses the rest outright. An
+    # app opening sends a dozen requests at once; through Cloudflare's tunnel each can come on a new
+    # connection, and the refused ones reached the app as "502" every time it was opened.
+    request_queue_size = 128
+    daemon_threads = True
+
+
 def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
     api = AppAPI(svc)
     svc.jams.more = api.jam_more
@@ -1456,6 +1464,4 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
                     self.wfile.write(chunk)
                     remaining -= len(chunk)
 
-    server = ThreadingHTTPServer((host, port), Handler)
-    server.daemon_threads = True
-    return server
+    return Server((host, port), Handler)

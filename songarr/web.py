@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, quote, urlparse
 import segno
 
 from . import __version__, exportify
+from .appapi import Server
 from .db import STATUSES, track_dict
 from .branding import BrandError
 from .cluster import NODE_LOCAL, ROLES, ClusterConfig, ClusterError, clean_name
@@ -506,4 +507,4 @@ def make_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
             svg = segno.make(payload, error="m").svg_inline(scale=5, border=2, dark="#111111", light="#ffffff")
             return {"code": f"{code[:5]}-{code[5:]}", "expires": expires, "server": server, "qr_svg": svg}
 
-    return ThreadingHTTPServer((host, port), Handler)
+    return Server((host, port), Handler)

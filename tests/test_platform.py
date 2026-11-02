@@ -615,6 +615,33 @@ class AppAPITests(unittest.TestCase):
         big = {"name": "x" * (70 * 1024)}
         self.assertEqual(self.call(self.token, "POST", "/api/v1/playlists", big)[0], 413)
 
+    def test_many_connections_at_once(self):
+        # An app opening, through Cloudflare's tunnel: every request on a new connection, all at the same
+        # instant. With Python's queue of 5, Windows refused a third of these (the app saw "502").
+        answers, lock, start = [], threading.Lock(), threading.Barrier(60)
+
+        def one():
+            s = socket.socket()
+            s.settimeout(10)
+            start.wait()
+            try:
+                s.connect(("127.0.0.1", self.port))
+                s.sendall(b"GET /api/v1/me HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+                answer = s.recv(64).split(b"\r\n")[0]
+            except OSError as e:
+                answer = type(e).__name__.encode()
+            finally:
+                s.close()
+            with lock:
+                answers.append(answer)
+
+        threads = [threading.Thread(target=one) for _ in range(60)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(answers, [b"HTTP/1.1 401 Unauthorized"] * 60)
+
 
 class YouTubeSignInTests(unittest.TestCase):
     def test_netscape_format(self):
