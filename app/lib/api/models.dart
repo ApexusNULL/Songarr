@@ -255,6 +255,10 @@ class AppNotification {
   double get created => (json['created'] as num?)?.toDouble() ?? 0;
   bool get read => json['read'] == true;
   CatalogAlbum? get album => json['album'] == null ? null : CatalogAlbum(json['album'] as Map<String, dynamic>);
+
+  /// The artist a "discography added" note is about.
+  String? get artist => json['artist'] as String?;
+  String? get imageUrl => json['image_url'] as String?;
 }
 
 class Notifications {
@@ -630,13 +634,29 @@ class CatalogAlbum {
   String? get coverUrl => (json['cover_url'] ?? json['thumb_url']) as String?;
   String? get thumbUrl => (json['thumb_url'] ?? json['cover_url']) as String?;
   String? get releaseDate => json['release_date'] as String?;
+  String? get year => json['year'] as String?;
+}
+
+/// An artist's releases (one of each edition, newest first), and how far adding them all has got.
+class Discography {
+  Discography(this.json);
+  final Map<String, dynamic> json;
+
+  late final List<CatalogAlbum> releases = [for (final r in json['releases'] as List? ?? const []) CatalogAlbum(r as Map<String, dynamic>)];
+
+  /// While the discography is being added: releases looked through so far, of how many, songs queued.
+  ({int done, int of, int songs})? get adding {
+    final a = json['adding'] as Map<String, dynamic>?;
+    if (a == null) return null;
+    int n(String k) => (a[k] as num?)?.toInt() ?? 0;
+    return (done: n('done'), of: n('of'), songs: n('songs'));
+  }
 }
 
 /// A catalogue album with its full track list, and which songs the server already has.
 class CatalogAlbumPage extends CatalogAlbum {
   CatalogAlbumPage(super.json);
 
-  String? get year => json['year'] as String?;
   String? get label => json['label'] as String?;
   @override
   int get count => (json['count'] as num?)?.toInt() ?? tracks.length;

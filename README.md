@@ -525,6 +525,11 @@ deletes song files on its own: when someone unlikes a song, it only leaves *thei
 - **Whole albums:** search for any album (a soundtrack, a film score, a live album) and open it from
   the **Albums** row. It lists every track and marks the ones already on your server; **Add album**
   downloads the rest next, in album order.
+- **Whole discographies:** an artist's page shows their **Discography** (albums, singles and EPs).
+  **Add all** lets you pick which releases (albums and EPs to start with; live albums, singles and
+  compilations a tick away) and adds them in one go, oldest album first. A song on several releases
+  (a hits album, a deluxe re-issue) downloads once, and songs already on your server just join your
+  library. The bell says when it's done.
 - **Follow artists:** tap **Follow** on an artist's page. Their new releases show on Home under
   **New releases**, ring the **bell**, and (with [Firebase](#jam-notifications-firebase)) reach your
   phone; tapping one opens the album. **Library → Artists** lists who you follow.

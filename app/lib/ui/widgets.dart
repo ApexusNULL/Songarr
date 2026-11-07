@@ -159,6 +159,31 @@ class ArtistAvatar extends StatelessWidget {
   }
 }
 
+/// A filter to pick, in a row of them (Library's All / Playlists…, an artist's Albums / Singles).
+class FilterPill extends StatelessWidget {
+  const FilterPill({super.key, required this.label, required this.selected, required this.onTap});
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Pressable(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: selected ? auroraSoft : null,
+            color: selected ? null : glassFill,
+            border: Border.all(color: selected ? Colors.transparent : glassBorder),
+          ),
+          child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: selected ? Colors.white : Colors.white70)),
+        ),
+      );
+}
+
 /// A small pill with a gradient edge, e.g. "Because you like …".
 class ReasonChip extends StatelessWidget {
   const ReasonChip(this.text, {super.key, this.icon = Icons.auto_awesome_rounded});

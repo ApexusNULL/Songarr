@@ -47,6 +47,30 @@ MAX_BODY = 64 * 1024
 # Songarr, so they don't hold back an update's restart (Service.last_app_request)
 BACKGROUND = {"/api/v1/jams/current", "/api/v1/app/update", "/api/v1/podcasts/downloads"}
 CHUNK = 64 * 1024
+DISCOGRAPHY_SONGS = 2000  # one discography add stops here: about eight hours of downloading at the usual pace
+SAME_LENGTH_MS = 3000  # the same artist and title within this length is the same song (a remaster, a hits album)
+
+
+def _editions(releases: list[dict]) -> list[dict]:
+    """One of each release: Deezer lists an album's explicit and clean editions (and some re-issues
+    under the same name) separately. Keeps the explicit one, else the first out; the order is kept."""
+    def rank(r: dict) -> tuple:
+        return not r["explicit"], r["release_date"] or "9999"
+
+    best: dict[tuple[str, str], dict] = {}
+    for r in releases:
+        key = (norm(r["name"]), r["type"])
+        if key not in best or rank(r) < rank(best[key]):
+            best[key] = r
+    return [r for r in releases if best[(norm(r["name"]), r["type"])] is r]
+
+
+def _same_length(known: list[tuple[int, str]] | None, ms: int) -> str | None:
+    """The track id among [(length in ms, id)] about as long as `ms`, if any."""
+    for length, tid in known or ():
+        if ms and length and abs(length - ms) <= SAME_LENGTH_MS:
+            return tid
+    return None
 
 
 class ApiError(Exception):
@@ -69,6 +93,8 @@ class AppAPI:
         self.users = svc.users
         self._index: tuple[float, dict, dict] | None = None
         self._index_lock = threading.Lock()
+        self._adding: dict[int, dict] = {}  # Deezer artist id -> progress, while a discography is being added
+        self._adding_lock = threading.Lock()
 
     # -- scoping helpers ----------------------------------------------------------
 
@@ -1054,6 +1080,119 @@ class AppAPI:
         self.svc.wake.set()
         return self._album_out(album, user["id"])
 
+    # -- an artist's whole discography ----------------------------------------------------------
+
+    def _releases(self, deezer_id: int, name: str) -> list[dict]:
+        try:
+            return _editions(discover.artist_releases(deezer_id, name))
+        except RuntimeError:
+            raise ApiError(404, "No such artist.") from None
+        except (OSError, ValueError) as e:
+            log.info("discography of artist %s unavailable: %s", deezer_id, e)
+            raise ApiError(502, "The music catalogue isn't reachable right now; try again soon.") from None
+
+    def discography(self, user: dict, q: dict, body: dict) -> dict:
+        """Everything an artist has released, newest first, each with how many of its songs are on the
+        server; `adding` while their discography is being added."""
+        deezer_id = _int(q.get("deezer_id"), 0, 0, 10**12)
+        if not deezer_id:
+            raise ApiError(400, "deezer_id is required")
+        releases = self._on_server(self._releases(deezer_id, (q.get("name") or "").strip()))
+        with self._adding_lock:
+            adding = dict(self._adding[deezer_id]) if deezer_id in self._adding else None
+        return {"releases": [r | {"year": r["release_date"][:4] or None} for r in releases], "adding": adding}
+
+    def add_discography(self, user: dict, q: dict, body: dict) -> dict:
+        """Add the releases picked from an artist's discography. Looking through a big one takes a
+        while, so it carries on in the background and ends with a notification."""
+        deezer_id = _int(body.get("deezer_id"), 0, 0, 10**12)
+        name = str(body.get("name") or "").strip()
+        picked = {str(i) for i in body.get("ids") or [] if isinstance(i, (int, str))}
+        if not deezer_id or not name or not picked:
+            raise ApiError(400, "Send {deezer_id, name, ids}: the artist and the releases to add.")
+        releases = [r for r in self._releases(deezer_id, name) if str(r["id"]) in picked]
+        if not releases:
+            raise ApiError(400, "None of those are this artist's releases.")
+        # Albums and EPs first, oldest first, then compilations, then singles: a song keeps the details
+        # of where it first came out, and a hits album or a single only adds what no album has.
+        releases.sort(key=lambda r: ({"compile": 1, "single": 2}.get(r["type"], 0), r["release_date"] or "9999"))
+        with self._adding_lock:
+            if deezer_id in self._adding:
+                raise ApiError(409, "That discography is still being added.")
+            progress = self._adding[deezer_id] = {"done": 0, "of": len(releases), "songs": 0}
+            started = dict(progress)
+        threading.Thread(target=self._add_releases, args=(user["id"], user["name"], deezer_id, name, releases),
+                         name="discography", daemon=True).start()
+        return {"adding": started}
+
+    def _add_releases(self, uid: int, who: str, deezer_id: int, artist: str, releases: list[dict]) -> None:
+        """Requests each release's songs, once each: a song on several releases (a remaster, a hits
+        album), or already on the server, isn't downloaded again. Downloads go in the order added."""
+        progress = self._adding[deezer_id]
+        try:
+            known: dict[str, list[tuple[int, str]]] = {}  # song key -> [(length in ms, track id)]
+            for r in self.db.q("SELECT id, title, artists, duration_ms FROM tracks"):
+                known.setdefault(discover.song_key(json.loads(r["artists"]), r["title"]), []).append((r["duration_ms"] or 0, r["id"]))
+            isrcs: dict[str, str] = {}
+            order: list[str] = []
+            added: set[str] = set()
+            new = unread = 0
+            base = time.time()
+            for release in releases:
+                if len(order) >= DISCOGRAPHY_SONGS:
+                    break
+                try:
+                    tracks = discover.album(int(release["id"]))["tracks"]
+                except (OSError, RuntimeError, ValueError) as e:
+                    log.info("release %s of %s couldn't be read: %s", release["id"], artist, e)
+                    unread += 1
+                    tracks = []
+                ids = []
+                for t, m in zip(tracks, self._album_matches(tracks)):
+                    key = discover.song_key(t["artists"], t["title"])
+                    tid = m["id"] if m is not None else isrcs.get(t["isrc"] or "") or _same_length(known.get(key), t["duration_ms"])
+                    if tid in added or len(order) >= DISCOGRAPHY_SONGS:
+                        continue
+                    if tid is not None:  # already on the server: keep its details
+                        t = track_dict(self.db.one("SELECT * FROM tracks WHERE id = ?", (tid,)))
+                    else:
+                        new += 1
+                    tid = self.svc.request_track(uid, t, log=False)["id"]
+                    ids.append(tid)
+                    order.append(tid)
+                    added.add(tid)
+                    if t.get("isrc"):
+                        isrcs[t["isrc"]] = tid
+                    known.setdefault(key, []).append((t.get("duration_ms") or 0, tid))
+                with self.db.tx() as c:  # the newest request downloads first, so count down from the start
+                    c.executemany("UPDATE tracks SET requested_at = ? WHERE id = ?",
+                                  [(base - (len(order) - len(ids) + n) / 1000, tid) for n, tid in enumerate(ids)])
+                progress.update(done=progress["done"] + 1, songs=len(order))
+            self.db.log("requested", f"{who} added {artist}'s discography ({len(releases)} releases, {len(order)} songs, {new} new)")
+            had = len(order) - new
+            if new:
+                notes = [f"{new} new song{'' if new == 1 else 's'} downloading"] + ([f"{had} already on your server"] if had else [])
+            else:
+                notes = [f"All {had} songs were already on your server" if had else "No songs could be added"]
+            if len(order) >= DISCOGRAPHY_SONGS:
+                notes.append(f"stopped at {DISCOGRAPHY_SONGS} songs")
+            if unread:
+                notes.append(f"{unread} release{'' if unread == 1 else 's'} couldn't be read (try again later)")
+            try:
+                about = discover.find_artist(artist) or {}
+            except (OSError, RuntimeError, ValueError):
+                about = {}
+            self.svc.releases.notify([uid], "discography", f"{artist}: discography added", ", ".join(notes),
+                                     {"artist": artist, "image_url": about.get("thumb_url") or about.get("image_url")})
+            self._index = None
+            self.svc.wake.set()
+        except Exception:
+            log.exception("adding the discography of %s failed", artist)
+        finally:
+            with self._adding_lock:
+                self._adding.pop(deezer_id, None)
+            self.db.release()
+
     def requests(self, user: dict, q: dict, body: dict) -> dict:
         ids = [r[0] for r in self.db.q("SELECT track_id FROM requests WHERE user_id = ? ORDER BY created DESC LIMIT 200", (user["id"],))]
         return {"requests": self.tracks_by_ids(ids, user["id"])}
@@ -1114,6 +1253,8 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
     route("GET", "/catalog/albums", api.catalog_albums)
     route("GET", r"/catalog/albums/(deezer)/(\d+)", api.catalog_album)
     route("POST", "/requests/album", api.request_album)
+    route("GET", "/artist/discography", api.discography)
+    route("POST", "/requests/artist", api.add_discography)
     route("GET", "/requests", api.requests)
     route("GET", "/discover/genres", api.genres)
     route("GET", r"/discover/genres/(\d+)", api.genre)

@@ -350,6 +350,15 @@ class SongarrApi {
   Future<CatalogAlbumPage> requestAlbum(String source, String id) async =>
       CatalogAlbumPage(await _send('POST', '/requests/album', {'source': source, 'id': id}));
 
+  /// Everything an artist has released, newest first, and how far adding them all has got.
+  Future<Discography> discography(int deezerId, String name) async =>
+      Discography(await _get('/artist/discography', {'deezer_id': deezerId, 'name': name}));
+
+  /// Add these of an artist's releases. The server carries on in the background and leaves a
+  /// notification when it's done; the discography shows how far it has got meanwhile.
+  Future<void> addDiscography(int deezerId, String name, List<String> ids) =>
+      _send('POST', '/requests/artist', {'deezer_id': deezerId, 'name': name, 'ids': ids});
+
   /// Ask the server to download a song; [like] also saves it to Liked Songs.
   /// The YouTube uploads found for a song (with [search], YouTube is searched again first).
   Future<SongVersions> songVersions(String trackId, {bool search = false}) async =>

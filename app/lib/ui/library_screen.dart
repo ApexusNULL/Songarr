@@ -71,7 +71,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               for (final f in _Filter.values)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
-                  child: _FilterPill(
+                  child: FilterPill(
                     label: switch (f) {
                       _Filter.all => 'All',
                       _Filter.playlists => 'Playlists',
@@ -184,30 +184,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     ref.invalidate(libraryProvider);
     if (page != null && context.mounted) push(context, TrackListScreen.playlist(page.info['id'] as String, page.name));
   }
-}
-
-class _FilterPill extends StatelessWidget {
-  const _FilterPill({required this.label, required this.selected, required this.onTap});
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Pressable(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: selected ? auroraSoft : null,
-            color: selected ? null : glassFill,
-            border: Border.all(color: selected ? Colors.transparent : glassBorder),
-          ),
-          child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: selected ? Colors.white : Colors.white70)),
-        ),
-      );
 }
 
 class _IconCover extends StatelessWidget {

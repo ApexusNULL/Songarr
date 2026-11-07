@@ -13,6 +13,7 @@ import '../state/offline.dart';
 import '../state/player.dart';
 import '../state/session.dart';
 import 'artist_about.dart';
+import 'discography.dart';
 import 'fx/colors.dart';
 import 'fx/clock.dart';
 import 'fx/motion.dart';
@@ -564,6 +565,7 @@ class ArtistScreen extends ConsumerWidget {
           itemBuilder: (context, i) => FadeSlideIn(index: i, child: CatalogTile(item: a.popular[i], rank: i + 1)),
         ),
       ],
+      if (a.deezerId != null) SliverToBoxAdapter(child: DiscographySection(deezerId: a.deezerId!, name: name)),
       if (tracks.isNotEmpty) ...[
         SliverToBoxAdapter(child: SectionTitle('On your server', subtitle: '${tracks.length} songs')),
         SliverList.builder(
@@ -572,7 +574,7 @@ class ArtistScreen extends ConsumerWidget {
         ),
       ],
       if (a.albums.isNotEmpty) ...[
-        const SliverToBoxAdapter(child: SectionTitle('Albums')),
+        const SliverToBoxAdapter(child: SectionTitle('Albums on your server')),
         SliverToBoxAdapter(
           child: SizedBox(
             height: 206,

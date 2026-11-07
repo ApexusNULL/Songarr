@@ -179,10 +179,7 @@ class Releases:
         album = self.album_out({"album_id": a["id"], "title": a["name"], "artist": artist, "record_type": a["type"],
                                 "explicit": a["explicit"], "cover_url": a["cover_url"], "thumb_url": a["thumb_url"],
                                 "release_date": a["release_date"]})
-        now = time.time()
-        with self.db.tx() as c:
-            c.executemany("INSERT INTO notifications(user_id, kind, title, body, data, created) VALUES (?, 'release', ?, ?, ?, ?)",
-                          [(uid, title, a["name"], json.dumps({"album": album}), now) for uid in followers])
+        self.notify(followers, "release", title, a["name"], {"album": album})
         self.db.log("release", f"{title}: {a['name']} ({a['release_date'] or 'date unknown'})")
         self.svc.push.send_async(followers, title, a["name"], {"type": "new_release", "album": str(a["id"]), "name": a["name"],
                                                                "artist": artist, "kind": a["type"], "thumb": a["thumb_url"] or ""},
@@ -204,6 +201,13 @@ class Releases:
                        (PARTITION BY user_id ORDER BY created DESC) AS n FROM notifications) WHERE n > ?)""", (KEEP_NOTIFICATIONS,))
 
     # -- notifications ------------------------------------------------------------------------------
+
+    def notify(self, user_ids: list[int], kind: str, title: str, body: str, data: dict) -> None:
+        """A note in each person's bell on Home; `data` goes out with it (an album to open, an artist)."""
+        now = time.time()
+        with self.db.tx() as c:
+            c.executemany("INSERT INTO notifications(user_id, kind, title, body, data, created) VALUES (?, ?, ?, ?, ?, ?)",
+                          [(uid, kind, title, body, json.dumps(data), now) for uid in user_ids])
 
     def notifications(self, user_id: int, limit: int = 50) -> dict:
         rows = self.db.q("SELECT * FROM notifications WHERE user_id = ? ORDER BY created DESC, id DESC LIMIT ?", (user_id, limit))

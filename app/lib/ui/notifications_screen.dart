@@ -7,6 +7,7 @@ import '../state/session.dart';
 import 'catalog_album_screen.dart';
 import 'fx/motion.dart';
 import 'theme.dart';
+import 'tracklist_screen.dart';
 import 'widgets.dart';
 
 /// The bell on Home: new releases from the artists you follow (newest first). Opening it marks
@@ -80,15 +81,20 @@ class _NotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final album = n.album;
+    final artist = n.artist; // "discography added"
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      leading: Cover(album?.thumbUrl, size: 56, icon: Icons.album_rounded),
+      leading: artist != null ? ArtistAvatar(n.imageUrl, size: 56) : Cover(album?.thumbUrl, size: 56, icon: Icons.album_rounded),
       title: Text(n.title, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: TextStyle(fontWeight: n.read ? FontWeight.w500 : FontWeight.w800)),
       subtitle: Text([n.body, timeAgo(n.created)].where((s) => s.isNotEmpty).join(' · '),
           maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted)),
       trailing: n.read ? null : Container(width: 9, height: 9, decoration: const BoxDecoration(color: accent2, shape: BoxShape.circle)),
-      onTap: album == null ? null : () => push(context, CatalogAlbumScreen(album)),
+      onTap: album != null
+          ? () => push(context, CatalogAlbumScreen(album))
+          : artist != null
+              ? () => push(context, ArtistScreen(artist))
+              : null,
     );
   }
 }

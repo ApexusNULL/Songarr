@@ -6,9 +6,11 @@ import json
 import shutil
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
+from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -40,7 +42,7 @@ FEED = """<?xml version="1.0" encoding="UTF-8"?>
   <item>
     <title>Newest episode</title>
     <guid>guid-2</guid>
-    <pubDate>Mon, 05 Oct 2026 10:00:00 +0000</pubDate>
+    <pubDate>{recent}</pubDate>
     <itunes:duration>1:02:03</itunes:duration>
     <enclosure url="{base}/ep.mp3" type="audio/mpeg" length="10240"/>
     <content:encoded><![CDATA[<p>Hello <b>world</b></p><p>Second &amp; last</p>]]></content:encoded>
@@ -50,7 +52,7 @@ FEED = """<?xml version="1.0" encoding="UTF-8"?>
     <guid>guid-3</guid>
   </item>
 </channel>
-</rss>"""
+</rss>""".replace("{recent}", formatdate(time.time() - 2 * 86400))  # (only recent episodes download by themselves)
 
 
 class _FeedHandler(BaseHTTPRequestHandler):

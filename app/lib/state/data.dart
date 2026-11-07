@@ -61,6 +61,11 @@ final catalogAlbumProvider = FutureProvider.autoDispose.family<CatalogAlbumPage,
   final i = key.indexOf(':');
   return _api(ref).catalogAlbum(key.substring(0, i), key.substring(i + 1));
 });
+/// Keyed by "deezer id:artist name".
+final discographyProvider = FutureProvider.autoDispose.family<Discography, String>((ref, key) {
+  final i = key.indexOf(':');
+  return _api(ref).discography(int.parse(key.substring(0, i)), key.substring(i + 1));
+});
 final genresProvider = FutureProvider<List<Genre>>((ref) => _api(ref).genres());
 final genreChartProvider = FutureProvider.autoDispose.family<List<CatalogItem>, int>((ref, id) => _api(ref).genreChart(id));
 final requestsProvider = FutureProvider.autoDispose<List<Track>>((ref) => _api(ref).requests());
