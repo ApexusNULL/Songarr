@@ -39,6 +39,16 @@ object PlayLinks {
         })
     }
 
+    /** A link for the app that's in front already (from its own notification): now, or once it's listening. */
+    fun show(link: String) {
+        val ch = channel ?: run { pending = link; return }
+        ch.invokeMethod("open", link, object : MethodChannel.Result {
+            override fun success(result: Any?) {}
+            override fun error(code: String, message: String?, details: Any?) {}
+            override fun notImplemented() { pending = link } // (still starting: it asks for it)
+        })
+    }
+
     private fun open(app: Context, link: String) {
         pending = link
         app.startActivity(Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

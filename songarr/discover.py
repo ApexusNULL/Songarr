@@ -26,6 +26,7 @@ _last_call = 0.0
 
 
 def _get(path: str, ttl: float) -> dict:
+    """A Deezer API call, kept for [ttl] seconds (0: not kept)."""
     global _last_call
     with _lock:
         hit = _cache.get(path)
@@ -38,8 +39,9 @@ def _get(path: str, ttl: float) -> dict:
         data = json.load(r)
     if isinstance(data, dict) and data.get("error"):
         raise RuntimeError(f"Deezer: {data['error'].get('message', data['error'])}")
-    with _lock:
-        _cache[path] = (time.time(), data)
+    if ttl > 0:
+        with _lock:
+            _cache[path] = (time.time(), data)
     return data
 
 

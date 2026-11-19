@@ -9,6 +9,7 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import com.ryanheise.audioservice.AudioServiceActivity
@@ -30,6 +31,24 @@ class MainActivity : AudioServiceActivity() {
             description = "When an artist you follow puts out something new"
         }
         getSystemService(NotificationManager::class.java)?.createNotificationChannels(listOf(channel, releases))
+        DownloadsReceiver.createChannel(this)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        openFrom(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openFrom(intent)
+    }
+
+    /** Opened from Songarr's own notification (the downloads one): the screen it's about. */
+    private fun openFrom(intent: Intent?) {
+        val link = intent?.getStringExtra(DownloadsReceiver.OPEN) ?: return
+        intent.removeExtra(DownloadsReceiver.OPEN)
+        PlayLinks.show(link)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

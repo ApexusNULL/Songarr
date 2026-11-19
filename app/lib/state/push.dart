@@ -12,7 +12,9 @@ import 'session.dart';
 
 /// Jam invites and new releases from artists you follow as notifications (Firebase Cloud
 /// Messaging), so they reach you with the app closed. The server sends them; Android shows them;
-/// tapping one opens the invite, or the album.
+/// tapping one opens the invite, or the album. The downloads' progress comes as a data message that
+/// Android's side of the app draws itself (DownloadsReceiver.kt); with the app open, it also
+/// refreshes the progress bars.
 class Push {
   static bool _ready = false;
 
@@ -64,6 +66,11 @@ class Push {
     void arrived(RemoteMessage m) {
       if (m.data['type'] == 'new_release') { // the app is open: the bell and Home catch up
         ref.refreshReleases();
+        return;
+      }
+      if (m.data['type'] == 'downloads') {
+        ref.invalidate(requestProgressProvider);
+        if (m.data['kind'] == 'done') ref.refreshLibrary();
         return;
       }
       open(m);

@@ -52,11 +52,14 @@ Passwords are stored as scrypt hashes.
   "album_artists": ["…"], "release_date": "2014-05-01", "track_number": 1, "disc_number": 1,
   "duration_ms": 125000, "explicit": false, "cover_url": "https://…640", "thumb_url": "https://…64",
   "isrc": "…", "status": "downloaded", "playable": true, "format": "m4a", "bitrate": 129.6,
-  "size": 2026957, "liked": true
+  "size": 2026957, "liked": true, "genre": "Rock", "year": 1975
 }
 ```
 
 `status`: `wanted | searching | downloading | downloaded | review | failed | ignored`.
+`genre` (Deezer's genre for the song's album: Pop, Rap, Rock, Dance, R&B, Soundtracks...) and `year`
+(when the recording first came out, so a 2011 remaster of a 1975 song says 1975) are null until the
+server has looked them up: in the background, about a song a second, people's own songs first.
 Only `playable` songs can be streamed. Cover URLs are public CDN images, so load them directly.
 
 ## Endpoints
@@ -101,7 +104,9 @@ Only `playable` songs can be streamed. Cover URLs are public CDN images, so load
 | `GET /artist/discography?deezer_id=&name=` | Everything the artist has released (Deezer), newest first, one of each edition (an album's explicit one over its clean one): `{releases: [album as in `catalog/albums` + release_date, year], adding}`. `adding` is `{done, of, songs}` while their discography is being added (releases looked through so far, of how many; songs queued), else null |
 | `POST /requests/artist` `{deezer_id, name, ids}` | Add the releases `ids` (from `artist/discography`) in the background; returns `{adding}` at once, and a `discography` notification follows when it's done. Albums and EPs go first, oldest first, then compilations, then singles; each song is queued once: one on several releases (same recording, or same artist and title within 3 s of the same length) or already on the server isn't downloaded again (the server's copy joins your library). Up to 2000 songs per add. 409 while that artist's discography is still being added |
 | `GET /preview?source=&id=&isrc=&artist=&title=` | A 30-second MP3 preview of a song that isn't on the server (Deezer's, passed through; `Range` works). Found by Deezer id, else ISRC, else artist + title. `404` when there's none |
-| `GET /requests` | `{requests: [track]}`, your requests, newest first |
+| `POST /requests/link` `{url, playlist_id?}` | A song from a link: a YouTube (or YouTube Music) video, or anything else yt-dlp can download. `url` may be shared text with the link somewhere in it. That very upload downloads next (no searching or matching), and the song joins your library and, with `playlist_id`, the end of that playlist of yours. Its name comes from the page (YouTube Music's song details, or "Artist - Title (Official Video)" read as artist and title, or the channel as the artist). The same link again, or a YouTube video already downloaded for another song, gives that song. Returns the track. 400: not a link, a playlist or channel link, a site yt-dlp can't read, or an address in the home network; 404: not your playlist; 503: YouTube wants a break |
+| `GET /requests` | `{requests: [track], progress}`, your requests, newest first (asking for a song again makes it the newest), and `progress` as below |
+| `GET /requests/progress` | `{progress}`: how the songs you added are getting on, for progress bars; small, to ask every few seconds while they're shown. `null` when nothing of yours is on its way, otherwise `{total, ready, waiting, later, stuck, active: [{id, title, artists, thumb_url, stage, percent}], next, paused, eta}`. It counts everything you've asked for since the oldest of your songs still on its way (adding more makes it bigger; songs already on the server when asked for aren't counted). `later`: failed, tried again later; `stuck`: need a match picked or weren't found. `stage` is `finding`, `waiting` (YouTube's pace), `downloading` (with `percent`) or `finishing`. `next`: `{title, artists}` of the song that goes next. `paused`: `{reason, until}` (epoch seconds or null) while nothing downloads for anyone. `eta`: seconds until the last of them, roughly (null while paused with no end in sight) |
 | `GET /discover/genres` | `{genres: [{id, name, image}]}` (Deezer genres; 0 = all) |
 | `GET /discover/genres/{id}?limit=` | `{genre_id, tracks: [chart entry with in_library/status]}`: popular songs in that genre |
 | `GET /podcasts` | `{following: [podcast], continue: [episode] (partly heard), new_episodes: [episode] (last 3 weeks, unheard), recommended: [podcast + reason]}`. Following = the shows you follow |
@@ -118,7 +123,7 @@ Only `playable` songs can be streamed. Cover URLs are public CDN images, so load
 | `POST /artists/follow` `{name, deezer_id?}` | Follow an artist (found by name when `deezer_id` is missing; 404 if the catalogue doesn't know them). Their new releases reach this profile |
 | `POST /artists/unfollow` `{deezer_id}` | Stop following |
 | `GET /releases?limit=` | `{releases: [album]}`: releases from the artists you follow from the last 60 days, newest first. Each album is as in `GET /catalog/albums` plus `release_date`; open it with `GET /catalog/albums/deezer/{id}` |
-| `GET /notifications?limit=` | `{notifications: [{id, kind, title, body, created, read, …}], unread}`, newest first. `kind` `release` carries `album` (as in `catalog/albums`); `discography` carries `artist` (a name) and `image_url` |
+| `GET /notifications?limit=` | `{notifications: [{id, kind, title, body, created, read, …}], unread}`, newest first. `kind` `release` carries `album` (as in `catalog/albums`); `discography` carries `artist` (a name) and `image_url`; `downloads` (several songs you added are in) carries `requests: true` |
 | `POST /notifications/read` `{ids?}` | Mark these (or all) read; returns `{unread}` |
 | `GET /account` | `{name, login, has_password}` |
 | `POST /account/password` `{login, password, current?}` | Set or change this profile's sign-in name and password (8+ characters). Changing an existing password needs `current` (403 if wrong). Returns `{name, login, has_password}` |
@@ -129,7 +134,7 @@ Only `playable` songs can be streamed. Cover URLs are public CDN images, so load
 | `POST /jams/{id}/join` / `decline` / `leave` | the jam / `{ok}` / `{ok}`. When the host leaves, someone else hosts; it ends when everyone has left (or stopped checking in for 2 minutes) |
 | `POST /jams/{id}/invite` `{invite: [user id]}` | the jam |
 | `POST /jams/{id}/control` `{action, ...}` | the jam. `play`/`pause` `{position_ms}`, `seek` `{position_ms}`, `next`/`prev`/`jump` `{index?, expected_index}` (ignored if the Jam already moved on, so two phones finishing together skip once), `add` `{items, next?}` (to the end, or `next: true` after what's on), `replace` `{items, index}` (someone picked from another list: play that, from there) |
-| `POST /devices/push` `{token}` | Store this device's Firebase token so Jam invites arrive as notifications; `{ok, push}` (`push: false` when the server has no Firebase key) |
+| `POST /devices/push` `{token}` | Store this device's Firebase token so Jam invites arrive as notifications; `{ok, push}` (`push: false` when the server has no Firebase key). The songs you add also send data messages (no `notification`), which the app draws itself: `{type: "downloads", kind: progress\|done\|clear, stage, title, body, ready, total, indeterminate: 0\|1, at}` (all strings). One notification per person, updated in place: `kind: progress` shows a bar of `ready` out of `total`, `done` the outcome, `clear` removes it; `at` is milliseconds, and an older one arriving late is ignored |
 
 Recommendation and podcast objects:
 

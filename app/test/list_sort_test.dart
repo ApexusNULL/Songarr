@@ -57,4 +57,33 @@ void main() {
     expect((back.by, back.reversed), (SortBy.released, true));
     expect(ListSort.fromJson({'by': 'something new'}).by, SortBy.custom);
   });
+
+  group('by genre and era', () {
+    Track tagged(String id, String? genre, int? year) =>
+        Track({'id': id, 'title': id, 'artists': ['X'], 'genre': genre, 'year': year, 'release_date': '2011'});
+    final mix = [
+      tagged('rap88', 'Rap', 1988), tagged('pop03', 'Pop', 2003), tagged('rap85', 'Rap', 1985),
+      tagged('rock75', 'Rock', 1975), tagged('pop81', 'Pop', 1981), tagged('none', null, null), tagged('pop?', 'Pop', null),
+    ];
+    List<String> sorted(ListSort s) => [for (final i in sortedOrder(mix, s)) mix[i].id];
+    List<String> groups(ListSort s) => [for (final g in groupsIn([for (final i in sortedOrder(mix, s)) mix[i]], s.by)) '${g.label} ${g.count}'];
+
+    test('decades as people say them', () {
+      expect([for (final y in [1975, 1988, 2003, 2015, 2024, 1949]) tagged('x', null, y).era], ['70s', '80s', '00s', '10s', '20s', 'Older']);
+    });
+
+    test('era and genre together: "80s Rap", newest decade first, genres A to Z', () {
+      const s = ListSort(SortBy.eraGenre);
+      expect(sorted(s), ['pop03', 'pop81', 'rap88', 'rap85', 'rock75', 'pop?', 'none']);
+      expect(groups(s), ['00s Pop 1', '80s Pop 1', '80s Rap 2', '70s Rock 1', 'Pop 1', 'Not known yet 1']);
+      expect(sorted(const ListSort(SortBy.eraGenre, reversed: true)).take(4), ['pop?', 'rock75', 'pop81', 'rap88']);
+    });
+
+    test('by genre A to Z, newest first in each; by era', () {
+      expect(groups(const ListSort(SortBy.genre)), ['Pop 3', 'Rap 2', 'Rock 1', 'Genre not known yet 1']);
+      expect(sorted(const ListSort(SortBy.genre)).take(3), ['pop03', 'pop81', 'pop?']);
+      expect(groups(const ListSort(SortBy.era)), ['00s 1', '80s 3', '70s 1', 'Year not known yet 2']);
+      expect(groups(const ListSort(SortBy.era, reversed: true)), ['70s 1', '80s 3', '00s 1', 'Year not known yet 2']);
+    });
+  });
 }

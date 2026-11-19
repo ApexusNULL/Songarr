@@ -10,6 +10,7 @@ import '../state/data.dart';
 import '../state/player.dart';
 import '../state/search_history.dart';
 import '../state/session.dart';
+import 'add_link.dart';
 import 'artist_about.dart';
 import 'catalog_album_screen.dart';
 import 'fx/motion.dart';
@@ -309,6 +310,8 @@ class _Results extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final link = linkIn(query); // a pasted link: add what it points to, rather than search for it
+    if (link != null) return ListView(padding: const EdgeInsets.only(bottom: 190), children: [LinkCard(link)]);
     final local = ref.watch(searchProvider(query));
     final catalog = ref.watch(catalogProvider(query));
     final shows = ref.watch(podcastSearchProvider(query));

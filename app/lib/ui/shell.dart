@@ -15,6 +15,7 @@ import '../state/desktop.dart';
 import '../state/player.dart';
 import '../state/push.dart';
 import '../state/updates.dart';
+import 'add_link.dart';
 import 'catalog_album_screen.dart';
 import 'fx/motion.dart';
 import 'fx/nebula.dart';
@@ -53,7 +54,14 @@ class _ShellState extends ConsumerState<Shell> {
     final restored = ref.read(playerProvider).restoreLastSession();
     unawaited(restored);
     // "Play this" from another app (the fitness app's workout music): after the last session is back.
-    PlayLinks.listen(ref, restored);
+    PlayLinks.listen(ref, restored, openRequests: () {
+      // a tapped downloads notification: Requested songs, in the tab that's showing
+      _navigators[_tab].currentState?.push(MaterialPageRoute(builder: (_) => const RequestsScreen()));
+    }, addLink: (url) {
+      // a link shared to Songarr (YouTube → Share → Songarr): that song, and a playlist for it
+      final c = _navigators[_tab].currentContext;
+      if (c != null) addFromLink(c, ref, url);
+    });
     // Podcast downloads follow the server: on start, when the app comes back, and now and then.
     final offline = ref.read(offlineProvider.notifier);
     offline.syncEpisodes();

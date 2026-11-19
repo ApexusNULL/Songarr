@@ -69,6 +69,7 @@ final discographyProvider = FutureProvider.autoDispose.family<Discography, Strin
 final genresProvider = FutureProvider<List<Genre>>((ref) => _api(ref).genres());
 final genreChartProvider = FutureProvider.autoDispose.family<List<CatalogItem>, int>((ref, id) => _api(ref).genreChart(id));
 final requestsProvider = FutureProvider.autoDispose<List<Track>>((ref) => _api(ref).requests());
+final requestProgressProvider = FutureProvider.autoDispose<DownloadProgress?>((ref) => _api(ref).requestProgress());
 final meProvider = FutureProvider.autoDispose<Me>((ref) => _api(ref).me());
 final accountProvider = FutureProvider.autoDispose<Account>((ref) => _api(ref).account());
 final podcastsProvider = FutureProvider.autoDispose<PodcastShelves>((ref) => _api(ref).podcasts());
@@ -104,7 +105,7 @@ final podcastSearchProvider =
 /// After a like, playlist edit or request, refresh every view that might show it.
 extension RefreshLibrary on WidgetRef {
   void refreshLibrary() {
-    for (final p in [homeProvider, libraryProvider, likedProvider, requestsProvider]) {
+    for (final p in [homeProvider, libraryProvider, likedProvider, requestsProvider, requestProgressProvider]) {
       invalidate(p);
     }
     for (final f in [playlistProvider, searchProvider, catalogProvider, genreChartProvider, albumProvider, artistProvider]) {

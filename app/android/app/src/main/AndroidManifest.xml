@@ -56,6 +56,21 @@
             </intent-filter>
         </activity>
 
+        <!-- "Share → Songarr" with a link (YouTube's Share button): adds that song, with a playlist to pick -->
+        <activity
+            android:name=".ShareLinkActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
+        </activity>
+
         <service
             android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"
@@ -73,6 +88,15 @@
         </receiver>
 
         <receiver android:name=".UpdateReceiver" android:exported="false"/>
+        <!-- The songs you added, on their way: Firebase data messages, drawn with a progress bar -->
+        <receiver
+            android:name=".DownloadsReceiver"
+            android:exported="true"
+            android:permission="com.google.android.c2dm.permission.SEND">
+            <intent-filter>
+                <action android:name="com.google.android.c2dm.intent.RECEIVE"/>
+            </intent-filter>
+        </receiver>
         <receiver android:name=".UpdatedReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>

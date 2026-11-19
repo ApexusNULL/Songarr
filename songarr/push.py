@@ -20,6 +20,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import Callable
 
 from .db import DB
 
@@ -73,6 +74,28 @@ class Push:
     def send_to_users(self, user_ids: list[int], title: str, body: str, data: dict[str, str], channel: str = "jams") -> int:
         """Notify every signed-in phone of these profiles; returns how many accepted it. Never raises.
         [channel] is the app's notification channel: "jams" (invites ping) or "releases" (new music, quieter)."""
+        def message(token: str) -> dict:
+            return {"token": token,
+                    "notification": {"title": title, "body": body},
+                    "data": {k: str(v) for k, v in data.items()},
+                    "android": {"priority": "high", "notification": {
+                        "channel_id": channel, "tag": data.get("jam") or data.get("album") or "songarr",
+                        "default_sound": True, "default_vibrate_timings": True,  # an invite should ping, not arrive silently
+                        "notification_priority": "PRIORITY_HIGH" if channel == "jams" else "PRIORITY_DEFAULT"}}}
+        return self._send(user_ids, message)
+
+    def send_data(self, user_ids: list[int], data: dict, urgent: bool = False, collapse: str | None = None,
+                  ttl: int = 3600) -> int:
+        """A message the app handles itself (it draws the notification: the downloads' progress bar).
+        Not [urgent]: it can wait while the phone sleeps. Of several with the same [collapse] waiting for a
+        phone that's offline, only the newest arrives. Apps older than the message type ignore it."""
+        def message(token: str) -> dict:
+            return {"token": token, "data": {k: str(v) for k, v in data.items()},
+                    "android": {"priority": "high" if urgent else "normal", "ttl": f"{ttl}s",
+                                **({"collapse_key": collapse} if collapse else {})}}
+        return self._send(user_ids, message)
+
+    def _send(self, user_ids: list[int], message: Callable[[str], dict]) -> int:
         if not self.configured or not user_ids:
             return 0
         rows = self.db.q(f"""SELECT id, push_token FROM devices WHERE push_token IS NOT NULL
@@ -88,16 +111,7 @@ class Push:
         url = f"{FCM}/v1/projects/{account['project_id']}/messages:send"
         sent = 0
         for row in rows:
-            message = {"message": {
-                "token": row["push_token"],
-                "notification": {"title": title, "body": body},
-                "data": {k: str(v) for k, v in data.items()},
-                "android": {"priority": "high", "notification": {
-                    "channel_id": channel, "tag": data.get("jam") or data.get("album") or "songarr",
-                    "default_sound": True, "default_vibrate_timings": True,  # an invite should ping, not arrive silently
-                    "notification_priority": "PRIORITY_HIGH" if channel == "jams" else "PRIORITY_DEFAULT"}},
-            }}
-            req = urllib.request.Request(url, data=json.dumps(message).encode(), method="POST",
+            req = urllib.request.Request(url, data=json.dumps({"message": message(row["push_token"])}).encode(), method="POST",
                                          headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
             try:
                 with urllib.request.urlopen(req, timeout=20):

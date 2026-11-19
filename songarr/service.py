@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
-from . import library, playlists, tagging
+from . import library, links, playlists, tagging
 from .db import DB, has_file, track_dict
 from .matching import Candidate, TrackInfo
 from .app_build import AppBuild
@@ -23,11 +23,13 @@ from .releases import Releases
 from .scan import Scanner
 from .artist_info import ArtistInfo
 from .dependencies import Dependencies
+from .downloads import Downloads
+from .genres import Genres
 from .jams import Jams
 from .lyrics import Lyrics
 from .push import Push
 from .podcast_downloads import PodcastDownloads
-from .podcasts import Podcasts
+from .podcasts import Podcasts, check_url
 from .recommend import Recommender
 from .smartshuffle import SmartShuffle, trial_root
 from .users import Users
@@ -100,6 +102,8 @@ class Service:
         self.branding = Branding(self.db, self.data_dir)
         self.scanner = Scanner(self)  # music already in the music folder isn't downloaded again
         self.releases = Releases(self)  # followed artists' new releases
+        self.downloads = Downloads(self)  # how the songs people added are getting on (progress bars, notifications)
+        self.genres = Genres(self)  # each song's genre and era, to sort and group lists by
         self.app_build = AppBuild(self)
         self.artist_info = ArtistInfo(self)
         self.lyrics = Lyrics(self.db)
@@ -145,6 +149,8 @@ class Service:
                         threading.Thread(target=self.dependencies.run, name="dependencies", daemon=True),
                         threading.Thread(target=self.scanner.run, name="music-scan", daemon=True),
                         threading.Thread(target=self.releases.run, name="releases", daemon=True),
+                        threading.Thread(target=self.downloads.run, name="downloads", daemon=True),
+                        threading.Thread(target=self.genres.run, name="genres", daemon=True),
                         threading.Thread(target=self.smart_shuffle.run, name="smart-shuffle", daemon=True)]
         for t in self.threads:
             t.start()
@@ -164,6 +170,8 @@ class Service:
         self.dependencies.wake.set()
         self.scanner.wake.set()
         self.releases.wake.set()
+        self.downloads.wake.set()
+        self.genres.wake.set()
         self.smart_shuffle.wake.set()
         if wait:
             for t in getattr(self, "threads", []):
@@ -314,6 +322,7 @@ class Service:
                 self.active.pop(tid, None)
             shutil.rmtree(self.tmp / tid, ignore_errors=True)
             self.wake.set()
+            self.downloads.wake.set()  # (someone's song may have just arrived)
 
     # -- one track ----------------------------------------------------------------
 
@@ -327,7 +336,8 @@ class Service:
         ext = FORMATS[fmt][1]
         # (a song on trial goes to the trial folder until it's kept: smartshuffle.py)
         dest = library.target_path(trial_root(s["library_root"]) if t.get("trial") == 1 else s["library_root"], t, ext)
-        picked = bool(t.get("pinned") and t.get("youtube_id"))  # a version chosen by hand: download it, whatever's on disk
+        # a version chosen by hand, or a song from a link: download that, whatever's on disk
+        picked = bool(t.get("pinned") and (t.get("youtube_id") or t.get("source_url")))
 
         if not picked and dest.exists() and tagging.read_spotify_id(dest) == tid:  # already on disk (e.g. DB was reset)
             self.db.set_status(tid, "downloaded", file_path=str(dest), file_size=dest.stat().st_size, error=None)
@@ -349,6 +359,13 @@ class Service:
             kind, on_wait=lambda secs: self._stage(tid, f"waiting {secs:.0f}s (pacing for YouTube)"))
         info = TrackInfo(t["title"], t["artists"], t.get("album"), (t.get("duration_ms") or 0) / 1000 or None, t.get("isrc"))
         threshold = float(s.get("match_threshold") or 0.7)
+
+        if picked and not t.get("youtube_id"):  # from a link to another site: that, as it is
+            self.db.set_status(tid, "downloading")
+            self._stage(tid, "downloading", percent=0.0)
+            path, ytinfo = yt.download("link", self.tmp / tid, fmt, self._progress_hook(tid), url=t["source_url"])
+            self._place(t, path, ytinfo, dest, None, 1.0, t["source_url"])
+            return
 
         if t.get("pinned") and t.get("youtube_id"):
             self._stage(tid, "checking your pick")
@@ -374,22 +391,27 @@ class Service:
             except (Unavailable, NeedsSignIn) as e:  # another good upload may not be restricted
                 last_err = e
                 continue
-            self._stage(tid, "tagging", percent=100.0)
-            cover = tagging.fetch_cover(t.get("cover_url"))
-            tagging.tag(path, t, cover, cand.id)
-            self._stage(tid, "moving to library")
-            final = library.place(path, dest)  # (over the old file, when it's the same path)
-            library.write_folder_cover(final.parent, cover)
-            if t.get("file_path") and Path(t["file_path"]) != final:
-                self._remove_replaced(Path(t["file_path"]), final, tid)
-            self.db.set_status(tid, "downloaded", youtube_id=cand.id, match_score=cand.score, file_path=str(final),
-                               file_size=final.stat().st_size, bitrate=ytinfo.get("abr"), error=None, attempts=0,
-                               next_attempt=None, blocked=0, previous_youtube_id=None)
-            self.db.log("downloaded", f"{', '.join(t['artists'])} - {t['title']} ({_describe(cand)})", tid)
-            self.playlists_dirty = True
-            self._on_success()
+            self._place(t, path, ytinfo, dest, cand.id, cand.score, _describe(cand))
             return
         raise last_err or RuntimeError("download failed")
+
+    def _place(self, t: dict, path: Path, ytinfo: dict, dest: Path, youtube_id: str | None, score: float, source: str) -> None:
+        """A downloaded file: tagged, into the music library, and the song marked downloaded."""
+        tid = t["id"]
+        self._stage(tid, "tagging", percent=100.0)
+        cover = tagging.fetch_cover(t.get("cover_url"))
+        tagging.tag(path, t, cover, youtube_id)
+        self._stage(tid, "moving to library")
+        final = library.place(path, dest)  # (over the old file, when it's the same path)
+        library.write_folder_cover(final.parent, cover)
+        if t.get("file_path") and Path(t["file_path"]) != final:
+            self._remove_replaced(Path(t["file_path"]), final, tid)
+        self.db.set_status(tid, "downloaded", youtube_id=youtube_id, match_score=score, file_path=str(final),
+                           file_size=final.stat().st_size, bitrate=ytinfo.get("abr"), error=None, attempts=0,
+                           next_attempt=None, blocked=0, previous_youtube_id=None)
+        self.db.log("downloaded", f"{', '.join(t['artists'])} - {t['title']} ({source})", tid)
+        self.playlists_dirty = True
+        self._on_success()
 
     def _reuse_same_recording(self, t: dict, dest: Path) -> bool:
         """Spotify sometimes lists one recording under several IDs (an album and its re-release).
@@ -533,7 +555,9 @@ class Service:
         """A song asked for from the app: add it to the shared library and download it next."""
         self.db.upsert_tracks([track])
         tid = track["id"]
-        self.db.run("INSERT OR IGNORE INTO requests(user_id, track_id, created) VALUES (?, ?, ?)", (user_id, tid, time.time()))
+        # (asked for again: it's a new request, at the top of their list, part of what's downloading now)
+        self.db.run("""INSERT INTO requests(user_id, track_id, created) VALUES (?, ?, ?)
+                       ON CONFLICT(user_id, track_id) DO UPDATE SET created = excluded.created""", (user_id, tid, time.time()))
         self.db.add_source(tid, f"req:{user_id}")
         # ahead of the backlog, and of earlier requests: the newest request downloads first
         self.db.run("UPDATE tracks SET monitored = 1, priority = MAX(priority, ?), requested_at = ? WHERE id = ?",
@@ -545,7 +569,31 @@ class Service:
             name = self.db.one("SELECT name FROM users WHERE id = ?", (user_id,))
             self.db.log("requested", f"{name[0] if name else 'Someone'} requested {', '.join(track['artists'])} - {track['title']}", tid)
         self.wake.set()
+        self.downloads.wake.set()
         return track_dict(self.db.one("SELECT * FROM tracks WHERE id = ?", (tid,)))
+
+    def request_link(self, user_id: int, url: str) -> dict:
+        """A song from a link: a YouTube video, or anything else yt-dlp can download. That very upload
+        downloads, ahead of everything else, and the song joins their library. A link to something
+        already downloaded (by this link, or the same YouTube video found for another song) just joins
+        their library. Raises UnsafeURL for an address in the home network, Blocked while YouTube wants
+        a break, Unavailable for a link yt-dlp can't use."""
+        check_url(url)  # (the server fetches it: never anything in the home network)
+        if time.time() < self.cooldown_until:
+            raise Blocked("bot", "YouTube asked Songarr to slow down")
+        info = self.youtube_factory(self.db.settings()).link_info(url)
+        track = links.link_track(info, url)
+        youtube_id = info["id"] if links.is_youtube(info) else None
+        have = self.db.one("SELECT * FROM tracks WHERE id = ?", (track["id"],)) or (youtube_id and self.db.one(
+            "SELECT * FROM tracks WHERE youtube_id = ? AND status = 'downloaded' ORDER BY updated LIMIT 1", (youtube_id,)))
+        if have:
+            track = track_dict(have)
+        else:
+            self.db.upsert_tracks([track])
+            self.db.run("UPDATE tracks SET pinned = 1, youtube_id = ?, source_url = ? WHERE id = ?",
+                        (youtube_id, None if youtube_id else info.get("webpage_url") or url, track["id"]))
+            self.db.log("link", f"{', '.join(track['artists'])} - {track['title']}: from a link, {url}", track["id"])
+        return self.request_track(user_id, track)
 
     def snapshot(self) -> list[dict]:
         with self.lock:

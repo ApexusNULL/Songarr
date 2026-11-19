@@ -360,7 +360,11 @@ MIGRATIONS = {
                "requested_at": "REAL",  # when it was last requested: the newest request downloads first
                "previous_youtube_id": "TEXT",  # while another version replaces it: the upload it had (service.replace)
                "trial": "INTEGER NOT NULL DEFAULT 0",  # 1: downloaded to try out (smartshuffle.py); 2: was, not kept
-               "trial_since": "REAL"},
+               "trial_since": "REAL",
+               "source_url": "TEXT",  # a song from a link to a site other than YouTube: where it downloads from (links.py)
+               "genre": "TEXT",  # Deezer's genre for its album (genres.py)
+               "year": "INTEGER",  # when the recording first came out
+               "facts_checked": "REAL"},  # when its genre and year were looked up
     "devices": {"push_token": "TEXT"},  # Firebase registration token, for Jam invites
     "user_playlists": {"source_id": "TEXT",  # the Spotify playlist it was brought over from (before Exportify)
                        "source_name": "TEXT", "source_snapshot": "TEXT", "source_seen": "TEXT", "image_url": "TEXT"},

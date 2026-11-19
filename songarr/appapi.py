@@ -34,7 +34,7 @@ from .jams import Jam, JamError
 from .db import has_file, track_dict
 from .matching import TrackInfo, norm
 from .service import Service
-from .youtube import youtube_id
+from .youtube import Blocked, NeedsSignIn, Unavailable, youtube_id
 from .users import SignInError
 
 log = logging.getLogger(__name__)
@@ -126,6 +126,7 @@ class AppAPI:
             "status": "downloaded" if has_file(t) else t["status"], "playable": has_file(t),
             "format": Path(t["file_path"]).suffix.lstrip(".") if t["file_path"] else None,
             "bitrate": t["bitrate"], "size": t["file_size"], "liked": t["id"] in liked,
+            "genre": t.get("genre"), "year": t.get("year"),  # (once looked up: genres.py)
         }
 
     def library_index(self) -> tuple[dict, dict]:
@@ -978,6 +979,32 @@ class AppAPI:
             self.like(user, {}, {}, row["id"])
         return self.track_out(self.db.one("SELECT * FROM tracks WHERE id = ?", (row["id"],)), self.liked_ids(user["id"]))
 
+    def request_link(self, user: dict, q: dict, body: dict) -> dict:
+        """A song from a link (YouTube, or any site yt-dlp can download), into your library and, with
+        `playlist_id`, onto the end of that playlist. Shared text often has words around the link."""
+        found = re.search(r"https?://\S+", str(body.get("url") or ""))
+        if not found:
+            raise ApiError(400, "That isn't a link. Paste a link to a song or video (YouTube, SoundCloud...).")
+        pid = str(body.get("playlist_id") or "")
+        if pid:
+            self._own_playlist(user, pid)
+        try:
+            row = self.svc.request_link(user["id"], found.group(0).rstrip(").,!?'\""))
+        except podcasts.UnsafeURL:
+            raise ApiError(400, "Songarr only downloads from the internet, not from addresses in your own network.") from None
+        except podcasts.PodcastError as e:
+            raise ApiError(400, str(e)) from None
+        except Blocked:
+            raise ApiError(503, "YouTube asked Songarr to slow down for a while. Try the link again later.") from None
+        except NeedsSignIn:
+            raise ApiError(400, "YouTube only shows that video to signed-in users (YouTube sign-in on the server).") from None
+        except Unavailable as e:
+            raise ApiError(400, f"That link can't be downloaded: {str(e)[:200]}") from None
+        if pid:
+            self.add_to_playlist(user, {}, {"track_ids": [row["id"]]}, pid)
+        self._index = None
+        return self.track_out(self.db.one("SELECT * FROM tracks WHERE id = ?", (row["id"],)), self.liked_ids(user["id"]))
+
     # -- whole albums -------------------------------------------------------------------
 
     def catalog_albums(self, user: dict, q: dict, body: dict) -> dict:
@@ -1195,7 +1222,17 @@ class AppAPI:
 
     def requests(self, user: dict, q: dict, body: dict) -> dict:
         ids = [r[0] for r in self.db.q("SELECT track_id FROM requests WHERE user_id = ? ORDER BY created DESC LIMIT 200", (user["id"],))]
-        return {"requests": self.tracks_by_ids(ids, user["id"])}
+        return {"requests": self.tracks_by_ids(ids, user["id"]), "progress": self._downloads(user["id"])}
+
+    def request_progress(self, user: dict, q: dict, body: dict) -> dict:
+        """How the songs you added are getting on (the progress bars): small, to ask every few seconds."""
+        return {"progress": self._downloads(user["id"])}
+
+    def _downloads(self, uid: int) -> dict | None:
+        p = self.svc.downloads.progress(uid)
+        if p is not None:
+            del p["since"]
+        return p
 
     def genres(self, user: dict, q: dict, body: dict) -> dict:
         return {"genres": discover.genres()}
@@ -1255,7 +1292,9 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
     route("POST", "/requests/album", api.request_album)
     route("GET", "/artist/discography", api.discography)
     route("POST", "/requests/artist", api.add_discography)
+    route("POST", "/requests/link", api.request_link)
     route("GET", "/requests", api.requests)
+    route("GET", "/requests/progress", api.request_progress)
     route("GET", "/discover/genres", api.genres)
     route("GET", r"/discover/genres/(\d+)", api.genre)
     route("GET", "/podcasts", api.podcasts_home)

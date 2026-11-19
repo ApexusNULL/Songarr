@@ -24,6 +24,16 @@ class Track {
   List<String> get albumArtists => _strings(json['album_artists']);
   String? get releaseDate => json['release_date'] as String?;
   int? get trackNumber => json['track_number'] as int?;
+  /// Its genre (Pop, Rap, Rock...) and the year the recording first came out (a 2011 remaster of a
+  /// 1975 song: 1975), once the server has looked them up.
+  String? get genre => json['genre'] as String?;
+  int? get year => (json['year'] as num?)?.toInt();
+  /// The decade it first came out in: "80s", "00s"; "Older" before 1950.
+  String? get era {
+    final y = year;
+    if (y == null) return null;
+    return y < 1950 ? 'Older' : '${'${y % 100 ~/ 10 * 10}'.padLeft(2, '0')}s';
+  }
   int? get discNumber => json['disc_number'] as int?;
   /// Mixed in by Smart Shuffle: a song you're likely to love next, and why ([reason]).
   bool get suggested => json['suggested'] == true;
@@ -259,6 +269,9 @@ class AppNotification {
   /// The artist a "discography added" note is about.
   String? get artist => json['artist'] as String?;
   String? get imageUrl => json['image_url'] as String?;
+
+  /// "Your songs are ready": opens Requested songs.
+  bool get aboutRequests => json['requests'] == true;
 }
 
 class Notifications {
@@ -651,6 +664,89 @@ class Discography {
     int n(String k) => (a[k] as num?)?.toInt() ?? 0;
     return (done: n('done'), of: n('of'), songs: n('songs'));
   }
+}
+
+/// How the songs you added are getting on: everything you've asked for since the oldest one still on
+/// its way (GET /requests/progress). Null from the server once nothing of yours is.
+class DownloadProgress {
+  DownloadProgress(this.json);
+  final Map<String, dynamic> json;
+
+  int _n(String k) => (json[k] as num?)?.toInt() ?? 0;
+  int get total => _n('total');
+  int get ready => _n('ready');
+  int get waiting => _n('waiting');
+  /// Failed for now; the server tries them again later.
+  int get later => _n('later');
+  /// Need a hand on the server: a match picked, or not found at all.
+  int get stuck => _n('stuck');
+  late final List<ActiveDownload> active = [for (final a in json['active'] as List? ?? const []) ActiveDownload(a as Map<String, dynamic>)];
+  ActiveDownload? of(String trackId) => active.where((a) => a.id == trackId).firstOrNull;
+
+  /// Why nothing's downloading right now (YouTube wants a break, the server is paused), and until when.
+  String? get pausedReason => (json['paused'] as Map<String, dynamic>?)?['reason'] as String?;
+  DateTime? get pausedUntil {
+    final u = (json['paused'] as Map<String, dynamic>?)?['until'];
+    return u is num ? DateTime.fromMillisecondsSinceEpoch((u * 1000).round()) : null;
+  }
+
+  /// Roughly how long until the last of them is in.
+  Duration? get eta => json['eta'] is num ? Duration(seconds: (json['eta'] as num).toInt()) : null;
+
+  /// Ready songs, plus how far along the ones downloading are.
+  double get fraction => total == 0 ? 0 : ((ready + active.fold<double>(0, (s, a) => s + a.fraction * 0.9)) / total).clamp(0, 1);
+
+  String get headline {
+    if (pausedReason != null) return 'Waiting to download ${total - ready} song${total - ready == 1 ? '' : 's'}';
+    if (total == 1 && active.isNotEmpty) return active.first.words;
+    if (active.isEmpty) return '${total - ready} song${total - ready == 1 ? '' : 's'} waiting to download';
+    return ready == 0 ? 'Downloading $total songs' : '$ready of $total songs ready';
+  }
+
+  /// The line under it: why it's waiting, or the time left, and anything needing a hand.
+  String get detail {
+    final until = pausedUntil;
+    final bits = [
+      if (pausedReason != null) until == null ? pausedReason! : '$pausedReason; carrying on at ${_clock(until)}',
+      if (pausedReason == null && eta != null && eta!.inMinutes >= 2) 'About ${_roughly(eta!)} left',
+      if (later > 0) '$later to try again later',
+      if (stuck > 0) '$stuck need${stuck == 1 ? 's' : ''} a hand on the server',
+    ];
+    return bits.join(' · ');
+  }
+
+  static String _clock(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  static String _roughly(Duration d) => d.inMinutes < 60
+      ? '${d.inMinutes} min'
+      : d.inHours >= 10
+          ? '${d.inHours} h'
+          : '${(d.inMinutes / 60).toStringAsFixed(1).replaceAll('.0', '')} h';
+}
+
+/// A song the server is working on right now.
+class ActiveDownload {
+  ActiveDownload(this.json);
+  final Map<String, dynamic> json;
+  String get id => json['id'] as String;
+  String get title => json['title'] as String? ?? '';
+  /// finding, waiting (YouTube's pace), downloading or finishing.
+  String get stage => json['stage'] as String? ?? 'finding';
+  double get percent => (json['percent'] as num?)?.toDouble() ?? 0;
+  double get fraction => switch (stage) { 'downloading' => percent / 100, 'finishing' => 1, _ => 0 };
+
+  /// "Downloading 45%" for a song's own line.
+  String get stageText => switch (stage) {
+        'downloading' => 'Downloading · ${percent.round()}%',
+        'waiting' => 'Waiting its turn with YouTube',
+        'finishing' => 'Almost ready',
+        _ => 'Finding it on YouTube',
+      };
+  String get words => switch (stage) {
+        'downloading' => 'Downloading $title',
+        'waiting' => '$title: waiting its turn with YouTube',
+        'finishing' => '$title is almost ready',
+        _ => 'Finding $title on YouTube',
+      };
 }
 
 /// A catalogue album with its full track list, and which songs the server already has.

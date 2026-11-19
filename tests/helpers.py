@@ -18,9 +18,10 @@ recommend.STARTUP_DELAY = 10**6  # tests never reach Deezer or Apple; they call 
 podcast_downloads.STARTUP_DELAY = 10**6  # likewise PodcastDownloads.cycle
 artist_info.STARTUP_DELAY = 10**6  # no background bio prefetching in tests
 # Offline: anything a test doesn't fake goes to a closed local port and fails at once.
-from songarr import dependencies, discover, lyrics, podcasts  # noqa: E402
+from songarr import dependencies, discover, genres, lyrics, podcasts  # noqa: E402
 _NOWHERE = "http://127.0.0.1:9"
-discover.API = artist_info.WIKI = artist_info.WIKIDATA = artist_info.LASTFM = podcasts.ITUNES = lyrics.API = _NOWHERE
+discover.API = artist_info.WIKI = artist_info.WIKIDATA = artist_info.LASTFM = podcasts.ITUNES = lyrics.API = genres.MB = _NOWHERE
+genres.STARTUP_DELAY = 10**6  # no background genre lookups in tests
 dependencies.PYPI = _NOWHERE  # and never PyPI
 from songarr import selfupdate  # noqa: E402
 selfupdate.ROOT = Path(tempfile.gettempdir()) / "songarr-tests-not-a-clone"  # and never this repository's origin
@@ -90,7 +91,31 @@ class FakeYouTube:
     def details(self, vid: str, source: str = "yt") -> Candidate:
         return Candidate(id=vid, title="Picked by hand", duration=180, channel="X", source=source)
 
-    def download(self, vid: str, workdir: Path, fmt: str, progress):
+    LINKS = {  # what yt-dlp reads at a few links (process=False)
+        "https://www.youtube.com/watch?v=abcDEF12345": {
+            "id": "abcDEF12345", "extractor_key": "Youtube", "title": "Nova Band - Night Drive (Official Music Video)",
+            "channel": "NovaBandVEVO", "duration": 215, "upload_date": "20240301",
+            "webpage_url": "https://www.youtube.com/watch?v=abcDEF12345"},
+        "https://music.youtube.com/watch?v=xyz_-987654": {
+            "id": "xyz_-987654", "extractor_key": "Youtube", "title": "Morning Light", "track": "Morning Light",
+            "artists": ["Nova Band", "Guest"], "album": "First Light", "duration": 200,
+            "webpage_url": "https://www.youtube.com/watch?v=xyz_-987654"},
+        "https://soundcloud.com/someone/a-demo": {
+            "id": "123456", "extractor_key": "Soundcloud", "title": "A Demo [HQ]", "uploader": "someone", "duration": 95.5,
+            "thumbnails": [{"url": "https://img/small.jpg"}, {"url": "https://img/big.jpg"}],
+            "webpage_url": "https://soundcloud.com/someone/a-demo"},
+        "https://www.youtube.com/playlist?list=PL123": {"_type": "playlist", "entries": [], "extractor_key": "YoutubeTab"},
+    }
+
+    def link_info(self, url: str) -> dict:
+        self.pace("search")
+        if url not in self.LINKS:
+            raise Unavailable("Unsupported URL: " + url)
+        if self.LINKS[url].get("_type") == "playlist":
+            raise Unavailable("That's a playlist or a channel; share a link to one song.")
+        return dict(self.LINKS[url])
+
+    def download(self, vid: str, workdir: Path, fmt: str, progress, url: str | None = None):
         self.pace("download")
         with self.lock:
             self.paced.append(("download", time.time()))
@@ -109,7 +134,7 @@ class FakeYouTube:
             out.write_bytes(audio_file(fmt).read_bytes())
             progress({"status": "finished"})
             with self.lock:
-                self.downloads.append(vid)
+                self.downloads.append(url or vid)
             return out, {"abr": 129.6}
         finally:
             with self.lock:

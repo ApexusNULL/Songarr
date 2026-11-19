@@ -139,6 +139,24 @@ class YouTube:
         self.pace: Callable[[str], None] = pace or (lambda kind: None)
         self._local = threading.local()
 
+    def link_info(self, url: str) -> dict:
+        """What's at a link to one song or video: on YouTube, or any site yt-dlp knows (POST /requests/link).
+        Raises Unavailable for a playlist or channel, or a link yt-dlp can't read."""
+        self.pace("search")
+        try:
+            with yt_dlp.YoutubeDL(self._opts()) as y:
+                i = y.extract_info(url, download=False, process=False)
+                if i.get("_type") in ("url", "url_transparent") and i.get("url"):  # (a link that points on, once)
+                    i = y.extract_info(i["url"], download=False, process=False, ie_key=i.get("ie_key"))
+        except DownloadError as e:
+            e = classify(e)
+            if isinstance(e, (Blocked, NeedsSignIn, Unavailable)):
+                raise e from None
+            raise Unavailable(str(e).removeprefix("ERROR: ")) from None
+        if i.get("_type") in ("playlist", "multi_video") or i.get("entries") is not None:
+            raise Unavailable("That's a playlist or a channel; share a link to one song.")
+        return i
+
     def _opts(self, **extra) -> dict:
         o = {
             "quiet": True,
@@ -253,7 +271,9 @@ class YouTube:
 
     # -- download -----------------------------------------------------------
 
-    def download(self, video_id: str, workdir: Path, fmt: str, progress: Callable[[dict], None]) -> tuple[Path, dict]:
+    def download(self, video_id: str, workdir: Path, fmt: str, progress: Callable[[dict], None],
+                 url: str | None = None) -> tuple[Path, dict]:
+        """One upload's audio, by its YouTube id, or from [url] on another site ([video_id] names the file)."""
         self.pace("download")
         selector, codec = FORMATS.get(fmt, FORMATS["m4a"])
         workdir.mkdir(parents=True, exist_ok=True)
@@ -269,7 +289,7 @@ class YouTube:
         )
         try:
             with yt_dlp.YoutubeDL(opts) as y:
-                info = y.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+                info = y.extract_info(url or f"https://www.youtube.com/watch?v={video_id}", download=True)
         except DownloadError as e:
             raise classify(e) from None
         files = [Path(d["filepath"]) for d in info.get("requested_downloads") or [] if d.get("filepath")]

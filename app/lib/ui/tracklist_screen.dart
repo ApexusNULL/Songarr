@@ -12,6 +12,7 @@ import '../state/list_sort.dart';
 import '../state/offline.dart';
 import '../state/player.dart';
 import '../state/session.dart';
+import 'add_link.dart';
 import 'artist_about.dart';
 import 'discography.dart';
 import 'fx/colors.dart';
@@ -89,8 +90,11 @@ class TrackListScreen extends ConsumerWidget {
                 color: surface,
                 onSelected: (v) => v == 'reorder'
                     ? push(context, ReorderSongsScreen(playlistId: id, name: page.name.isNotEmpty ? page.name : title, tracks: page.tracks))
-                    : _editPlaylist(context, ref, v, page.name.isNotEmpty ? page.name : title),
+                    : v == 'link'
+                        ? askForLink(context, ref, playlistId: id, playlistName: page.name.isNotEmpty ? page.name : title)
+                        : _editPlaylist(context, ref, v, page.name.isNotEmpty ? page.name : title),
                 itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'link', child: Text('Add from a link')),
                   if (page.tracks.length > 1) const PopupMenuItem(value: 'reorder', child: Text('Reorder songs')),
                   const PopupMenuItem(value: 'rename', child: Text('Rename')),
                   const PopupMenuItem(value: 'delete', child: Text('Delete playlist')),
@@ -230,12 +234,25 @@ class TrackListScreen extends ConsumerWidget {
 
   Widget _body(BuildContext context, WidgetRef ref, TrackPage page, OfflineState offline, String? sortKey, ListSort sort) {
     // Shown (and played) in the order chosen; moving a song, or taking it out, goes by its place in the list itself.
-    final order = sortedOrder(page.tracks, sort);
+    var order = sortedOrder(page.tracks, sort);
+    // Sorted by genre or era: the list in groups ("80s Rap", "00s Pop"), and a chip to show (and play) just one.
+    final groups = sortKey != null && sort.by.groups ? groupsIn([for (final i in order) page.tracks[i]], sort.by) : const <({String label, int count})>[];
+    final chosen = sortKey == null ? null : ref.watch(listGroupsProvider)[sortKey];
+    final group = groups.any((g) => g.label == chosen) ? chosen : null;
+    if (group != null) order = [for (final i in order) if (groupOf(page.tracks[i], sort.by) == group) i];
     final tracks = [for (final i in order) page.tracks[i]];
+    // the rows: each song, with its group's heading before the first of them
+    final rows = <Object>[];
+    for (var i = 0; i < tracks.length; i++) {
+      final g = groups.length > 1 && group == null ? groupOf(tracks[i], sort.by) : null;
+      if (g != null && (i == 0 || groupOf(tracks[i - 1], sort.by) != g)) rows.add(g);
+      rows.add(i);
+    }
     final player = ref.read(playerProvider);
     final editable = _kind == _Kind.playlist && page.editable;
     return CustomScrollView(slivers: [
-      SliverToBoxAdapter(child: _header(context, ref, TrackPage(total: page.total, tracks: tracks, info: page.info), offline)),
+      SliverToBoxAdapter(
+          child: _header(context, ref, TrackPage(total: group == null ? page.total : tracks.length, tracks: tracks, info: page.info), offline)),
       if (sortKey != null && page.tracks.length > 1)
         SliverToBoxAdapter(
           child: Padding(
@@ -250,6 +267,24 @@ class TrackListScreen extends ConsumerWidget {
             ),
           ),
         ),
+      if (groups.length > 1)
+        SliverToBoxAdapter(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Row(children: [
+              for (final g in [(label: null, count: page.tracks.length), ...groups])
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterPill(
+                    label: '${g.label ?? 'All'} · ${g.count}',
+                    selected: group == g.label,
+                    onTap: () => ref.read(listGroupsProvider.notifier).show(sortKey!, group == g.label ? null : g.label),
+                  ),
+                ),
+            ]),
+          ),
+        ),
       if (tracks.isEmpty)
         SliverToBoxAdapter(
           child: Padding(
@@ -262,8 +297,20 @@ class TrackListScreen extends ConsumerWidget {
           ),
         ),
       SliverList.builder(
-        itemCount: tracks.length,
-        itemBuilder: (context, i) {
+        itemCount: rows.length,
+        itemBuilder: (context, r) {
+          final row = rows[r];
+          if (row is String) {
+            final n = groups.firstWhere((g) => g.label == row).count;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+              child: Row(children: [
+                Expanded(child: GradientMask(child: Text(row, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)))),
+                Text('$n song${n == 1 ? '' : 's'}', style: const TextStyle(color: muted, fontSize: 13)),
+              ]),
+            );
+          }
+          final i = row as int;
           final tile = TrackTile(
             track: tracks[i],
             number: tracks[i].trackNumber ?? i + 1,
@@ -274,7 +321,7 @@ class TrackListScreen extends ConsumerWidget {
             list: page.tracks,
             onTap: () => player.play(tracks, index: i, listKey: _listKey),
           );
-          return i < 14 ? FadeSlideIn(index: i, child: tile) : tile;
+          return r < 14 ? FadeSlideIn(index: r, child: tile) : tile;
         },
       ),
       const SliverToBoxAdapter(child: SizedBox(height: 190)),
@@ -288,7 +335,9 @@ class TrackListScreen extends ConsumerWidget {
   Future<void> _chooseSort(BuildContext context, WidgetRef ref, String key, ListSort current, List<Track> tracks) {
     final options = [
       for (final by in SortBy.values)
-        if (by != SortBy.added || tracks.any((t) => t.addedAt != null)) by, // (a server from before it said when)
+        if ((by != SortBy.added || tracks.any((t) => t.addedAt != null)) && // (a server from before it said when)
+            (!by.groups || tracks.any((t) => t.genre != null || t.year != null))) // (or before it looked up genres and years)
+          by,
     ];
     return showModalBottomSheet<void>(
       context: context,

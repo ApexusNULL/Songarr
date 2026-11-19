@@ -6,6 +6,7 @@ import '../state/data.dart';
 import '../state/session.dart';
 import 'catalog_album_screen.dart';
 import 'fx/motion.dart';
+import 'library_screen.dart';
 import 'theme.dart';
 import 'tracklist_screen.dart';
 import 'widgets.dart';
@@ -84,7 +85,9 @@ class _NotificationTile extends StatelessWidget {
     final artist = n.artist; // "discography added"
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      leading: artist != null ? ArtistAvatar(n.imageUrl, size: 56) : Cover(album?.thumbUrl, size: 56, icon: Icons.album_rounded),
+      leading: artist != null
+          ? ArtistAvatar(n.imageUrl, size: 56)
+          : Cover(album?.thumbUrl, size: 56, icon: n.aboutRequests ? Icons.download_done_rounded : Icons.album_rounded),
       title: Text(n.title, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: TextStyle(fontWeight: n.read ? FontWeight.w500 : FontWeight.w800)),
       subtitle: Text([n.body, timeAgo(n.created)].where((s) => s.isNotEmpty).join(' · '),
@@ -94,7 +97,9 @@ class _NotificationTile extends StatelessWidget {
           ? () => push(context, CatalogAlbumScreen(album))
           : artist != null
               ? () => push(context, ArtistScreen(artist))
-              : null,
+              : n.aboutRequests
+                  ? () => push(context, const RequestsScreen())
+                  : null,
     );
   }
 }

@@ -374,6 +374,17 @@ class SongarrApi {
 
   Future<List<Track>> requests() async => _tracks((await _get('/requests'))['requests']);
 
+  /// A song from a link (YouTube, or anything yt-dlp can download): it downloads next, into your
+  /// library and onto [playlistId] when given.
+  Future<Track> addLink(String url, {String? playlistId}) async =>
+      Track(await _send('POST', '/requests/link', {'url': url, 'playlist_id': ?playlistId}));
+
+  /// How the songs you added are getting on; null when nothing of yours is on its way.
+  Future<DownloadProgress?> requestProgress() async {
+    final p = (await _get('/requests/progress'))['progress'];
+    return p == null ? null : DownloadProgress(p as Map<String, dynamic>);
+  }
+
   Future<List<Genre>> genres() async => [
         for (final g in (await _get('/discover/genres'))['genres'] as List)
           Genre((g['id'] as num).toInt(), g['name'] as String, g['image'] as String?),

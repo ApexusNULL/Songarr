@@ -530,6 +530,15 @@ deletes song files on its own: when someone unlikes a song, it only leaves *thei
   compilations a tick away) and adds them in one go, oldest album first. A song on several releases
   (a hits album, a deluxe re-issue) downloads once, and songs already on your server just join your
   library. The bell says when it's done.
+- **Songs from links:** paste a YouTube link (or one from SoundCloud, Bandcamp, or anywhere else
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp) can download from) into Search, choose **Add from a
+  link** in one of your playlists, or share it to Songarr from the YouTube app. That exact upload
+  downloads next and goes into your library and the playlist you pick.
+- **Download progress:** songs you add show how they're getting on. **Library → Requested songs**
+  has a bar for all of them ("12 of 547 songs ready", the time left, or why it's waiting) and one
+  under each song being downloaded ("Finding it on YouTube", "Downloading · 45%"). With
+  [Firebase](#jam-notifications-firebase), your phone keeps one quiet notification with a progress
+  bar that follows them through each stage until they're ready; tap it to see the list.
 - **Follow artists:** tap **Follow** on an artist's page. Their new releases show on Home under
   **New releases**, ring the **bell**, and (with [Firebase](#jam-notifications-firebase)) reach your
   phone; tapping one opens the album. **Library → Artists** lists who you follow.
@@ -542,8 +551,12 @@ deletes song files on its own: when someone unlikes a song, it only leaves *thei
   length against the song's and a link to check it on YouTube first; **Search YouTube again** finds
   more, or paste a link. **Use this version** downloads it in place of the old one, for everyone.
 - **Sort** a playlist or Liked Songs (the button above the songs): default order, date added, title,
-  artist, album, release date or length; tap the one in use again to turn it round. The list plays in
-  the order shown, and each list keeps its sort on that phone.
+  artist, album, release date, length, genre, era, or **era and genre** together: the list in groups
+  like "80s Rap" and "00s Pop", with a chip for each to show and play just that group. Tap the sort in
+  use again to turn it round. The list plays in the order shown, and each list keeps its sort on that
+  phone. Genres come from [Deezer](https://developers.deezer.com/api) and the year each recording first
+  came out from [MusicBrainz](https://musicbrainz.org) (so a remaster counts as the original's era);
+  the server looks them up in the background, about a song a second.
 - **Smart Shuffle** (the ✦ button on a playlist or Liked Songs, or tap shuffle in Now Playing until it
   sparkles): after every two of the list's songs comes one you're likely to love next, marked ✦ with
   why ("More from Queen", "Loved by Sam"). The server picks them from what it can tell: how well a song

@@ -15,6 +15,9 @@ import 'session.dart';
 ///     songarr://play?list=liked|<playlist id>[&track=<song id>][&shuffle=1][&back=1]
 ///     songarr://play?album=<album id>[&track=...]     songarr://play?track=<song id>
 ///
+/// And songarr://requests, from the downloads notification: Requested songs, with their progress;
+/// songarr://add?url=<link>, a link shared to Songarr from another app (YouTube's Share): that song.
+///
 /// The list plays from [track] (or the start, or shuffled), as if picked in the app. Links arrive
 /// through PlayLinkActivity, which hands them to the running player without showing Songarr; when
 /// Songarr had to open for one, `back=1` returns to the app that asked. A list this profile doesn't
@@ -24,13 +27,18 @@ class PlayLinks {
 
   /// Handle the link that opened the app, and any that arrive while it runs. [restored] is the last
   /// session being put back: a link plays after it, so it isn't overwritten.
-  static void listen(WidgetRef ref, Future<void> restored) {
+  static void listen(WidgetRef ref, Future<void> restored, {void Function()? openRequests, void Function(String url)? addLink}) {
     if (!Platform.isAndroid) return; // (links reach the Android app only)
+    _openRequests = openRequests;
+    _addLink = addLink;
     _ch.setMethodCallHandler((call) async {
       if (call.method == 'open' && call.arguments is String) await open(ref, Uri.parse(call.arguments as String), restored);
     });
     unawaited(_initial(ref, restored));
   }
+
+  static void Function()? _openRequests;
+  static void Function(String url)? _addLink;
 
   /// A link that opened Songarr. The app can start before Android has set up its side of the
   /// channel, so ask again for a few seconds until it answers.
@@ -48,9 +56,19 @@ class PlayLinks {
     }
   }
 
-  static void stop() => _ch.setMethodCallHandler(null);
+  static void stop() {
+    _ch.setMethodCallHandler(null);
+    _openRequests = null;
+    _addLink = null;
+  }
 
   static Future<void> open(WidgetRef ref, Uri uri, Future<void> restored) async {
+    if (uri.scheme == 'songarr' && uri.host == 'requests') return _openRequests?.call();
+    if (uri.scheme == 'songarr' && uri.host == 'add') {
+      final url = uri.queryParameters['url'];
+      if (url != null) _addLink?.call(url);
+      return;
+    }
     if (uri.scheme != 'songarr' || uri.host != 'play') return;
     final player = ref.read(playerProvider);
     final api = ref.read(apiProvider);

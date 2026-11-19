@@ -305,8 +305,14 @@ class TrackTile extends ConsumerWidget {
       this.playlistId,
       this.position,
       this.list,
-      this.inLiked = false});
+      this.inLiked = false,
+      this.note,
+      this.footer});
   final bool inLiked; // shown in Liked Songs: "Move in Liked Songs"
+  /// Instead of where the song is on the server ("Downloading · 45%" in Requested songs).
+  final String? note;
+  /// Under the song's line (that song's download bar).
+  final Widget? footer;
   final Track track;
   final List<Track>? list; // the list it's shown in, for "Start a Jam with this"
   final VoidCallback onTap;
@@ -384,10 +390,11 @@ class TrackTile extends ConsumerWidget {
                         child: const Text('E', style: TextStyle(fontSize: 9, color: muted, fontWeight: FontWeight.bold)),
                       ),
                     Expanded(
-                      child: Text(playable ? track.artistLine : '${track.artistLine} · ${track.statusText}',
+                      child: Text(playable ? track.artistLine : '${track.artistLine} · ${note ?? track.statusText}',
                           maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 13)),
                     ),
                   ]),
+                  if (footer != null) Padding(padding: const EdgeInsets.only(top: 7, right: 12), child: footer),
                 ]),
               ),
               IconButton(
@@ -540,7 +547,8 @@ Future<void> toggleLike(BuildContext context, WidgetRef ref, Track track) async 
   }
 }
 
-Future<void> addToPlaylistDialog(BuildContext context, WidgetRef ref, List<Track> tracks) async {
+/// [heading]: what's being added, at the top (a song from a link).
+Future<void> addToPlaylistDialog(BuildContext context, WidgetRef ref, List<Track> tracks, {String? heading}) async {
   final api = ref.read(apiProvider);
   if (api == null) return;
   LibraryInfo lib;
@@ -557,6 +565,11 @@ Future<void> addToPlaylistDialog(BuildContext context, WidgetRef ref, List<Track
     useRootNavigator: true,
     builder: (sheet) => SafeArea(
       child: ListView(shrinkWrap: true, children: [
+        if (heading != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+            child: Text('Add $heading to a playlist?', style: const TextStyle(fontWeight: FontWeight.w700)),
+          ),
         ListTile(leading: const Icon(Icons.add_rounded), title: const Text('New playlist'), onTap: () => Navigator.pop(sheet, '+')),
         for (final p in editable)
           ListTile(
@@ -564,7 +577,7 @@ Future<void> addToPlaylistDialog(BuildContext context, WidgetRef ref, List<Track
         if (editable.isEmpty)
           const Padding(
             padding: EdgeInsets.all(16),
-            child: Text('Playlists synced from Spotify can only be changed in Spotify.', style: TextStyle(color: muted)),
+            child: Text('No playlists of yours yet: make one with New playlist.', style: TextStyle(color: muted)),
           ),
       ]),
     ),

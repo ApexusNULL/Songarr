@@ -10,6 +10,7 @@ import '../state/offline.dart';
 import '../state/player.dart';
 import '../state/session.dart';
 import 'arrange_playlists_screen.dart';
+import 'download_progress.dart';
 import 'fx/clock.dart';
 import 'fx/motion.dart';
 import 'podcast_screen.dart';
@@ -28,11 +29,28 @@ class LibraryScreen extends ConsumerStatefulWidget {
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   _Filter _filter = _Filter.all;
+  Timer? _downloads;
+
+  @override
+  void initState() {
+    super.initState();
+    // Songs you added, on their way: Requested songs keeps up while it shows (not unseen, in the background).
+    _downloads = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (mounted && showing(context) && ref.read(requestProgressProvider).value != null) ref.invalidate(requestProgressProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _downloads?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
     final offline = ref.watch(offlineProvider);
+    final downloading = _filter == _Filter.all || _filter == _Filter.playlists ? ref.watch(requestProgressProvider).value : null;
     final shows = _filter == _Filter.playlists ? null : ref.watch(podcastsProvider);
     final artists = _filter == _Filter.all || _filter == _Filter.artists ? ref.watch(followingProvider) : null;
     var n = 0;
@@ -120,9 +138,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               onTap: () => push(context, const TrackListScreen.downloads()),
             )),
             row(_LibraryRow(
-              leading: _IconCover(Icons.library_add_rounded),
+              leading: _IconCover(downloading == null ? Icons.library_add_rounded : Icons.downloading_rounded),
               title: 'Requested songs',
-              subtitle: 'Songs you added from search, charts and previews',
+              subtitle: downloading?.headline ?? 'Songs you added from search, charts and previews',
+              progress: downloading?.fraction,
               onTap: () => push(context, const RequestsScreen()),
             )),
           ],
@@ -200,12 +219,13 @@ class _IconCover extends StatelessWidget {
 }
 
 class _LibraryRow extends StatelessWidget {
-  const _LibraryRow({required this.leading, required this.title, required this.subtitle, required this.onTap, this.onLongPress});
+  const _LibraryRow({required this.leading, required this.title, required this.subtitle, required this.onTap, this.onLongPress, this.progress});
   final Widget leading;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+  final double? progress; // a bar under the subtitle (songs downloading)
 
   @override
   Widget build(BuildContext context) => Pressable(
@@ -222,6 +242,7 @@ class _LibraryRow extends StatelessWidget {
                 Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5)),
                 const SizedBox(height: 2),
                 Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 13)),
+                if (progress != null) Padding(padding: const EdgeInsets.only(top: 7, right: 8), child: DownloadBar(value: progress!)),
               ]),
             ),
           ]),
@@ -229,7 +250,9 @@ class _LibraryRow extends StatelessWidget {
       );
 }
 
-/// Songs requested from the app; refreshes while open so you can watch them arrive.
+/// Songs requested from the app, and how their downloads are getting on: a bar for all of them at the
+/// top ("12 of 547 songs ready"), and each song the server is working on with its stage and its own
+/// bar. Looks again every few seconds while songs download and the screen shows.
 class RequestsScreen extends ConsumerStatefulWidget {
   const RequestsScreen({super.key});
   @override
@@ -238,12 +261,31 @@ class RequestsScreen extends ConsumerStatefulWidget {
 
 class _RequestsScreenState extends ConsumerState<RequestsScreen> {
   Timer? _timer;
+  int _ticks = 0;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 20), (_) {
-      if (mounted && showing(context)) ref.invalidate(requestsProvider); // (not unseen, in the background)
+    // As songs arrive the list catches up (they turn playable), and after the last one so does the rest of the app.
+    ref.listenManual<AsyncValue<DownloadProgress?>>(requestProgressProvider, (before, now) {
+      final was = before?.value;
+      if (now.isLoading || now.hasError || was == null) return;
+      final p = now.value;
+      if (p == null) {
+        ref.refreshLibrary();
+      } else if (p.ready != was.ready || p.total != was.total) {
+        ref.invalidate(requestsProvider);
+      }
+    });
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || !showing(context)) return; // (not unseen, in the background)
+      _ticks++;
+      final p = ref.read(requestProgressProvider).value;
+      if (p != null && (p.active.isNotEmpty || _ticks % 5 == 0)) ref.invalidate(requestProgressProvider);
+      if (_ticks % 7 == 0) {
+        ref.invalidate(requestsProvider);
+        if (p == null) ref.invalidate(requestProgressProvider); // (added from another phone)
+      }
     });
   }
 
@@ -256,6 +298,7 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
   @override
   Widget build(BuildContext context) {
     final value = ref.watch(requestsProvider);
+    final progress = ref.watch(requestProgressProvider).value;
     final player = ref.read(playerProvider);
     return Scaffold(
       appBar: AppBar(
@@ -265,7 +308,10 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
       body: RefreshIndicator(
         color: accent,
         backgroundColor: surface,
-        onRefresh: () async => ref.invalidate(requestsProvider),
+        onRefresh: () async {
+          ref.invalidate(requestsProvider);
+          ref.invalidate(requestProgressProvider);
+        },
         child: asyncView<List<Track>>(value, (tracks) {
           if (tracks.isEmpty) {
             return ListView(children: const [
@@ -276,10 +322,25 @@ class _RequestsScreenState extends ConsumerState<RequestsScreen> {
               ),
             ]);
           }
+          final head = progress == null ? 0 : 1;
           return ListView.builder(
             padding: const EdgeInsets.only(bottom: 190),
-            itemCount: tracks.length,
-            itemBuilder: (context, i) => FadeSlideIn(index: i, child: TrackTile(track: tracks[i], list: tracks, onTap: () => player.play(tracks, index: i))),
+            itemCount: head + tracks.length,
+            itemBuilder: (context, i) {
+              if (i < head) return DownloadProgressCard(progress!);
+              final n = i - head;
+              final now = progress?.of(tracks[n].id);
+              return FadeSlideIn(
+                index: i,
+                child: TrackTile(
+                  track: tracks[n],
+                  list: tracks,
+                  note: now?.stageText,
+                  footer: now == null ? null : DownloadBar(value: now.fraction),
+                  onTap: () => player.play(tracks, index: n),
+                ),
+              );
+            },
           );
         }, onRetry: () => ref.invalidate(requestsProvider), loading: const ListSkeleton()),
       ),
