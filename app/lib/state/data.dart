@@ -48,6 +48,10 @@ final libraryProvider = FutureProvider.autoDispose<LibraryInfo>(
 final likedProvider = FutureProvider.autoDispose<TrackPage>((ref) => _keptPage(ref, 'liked', _api(ref).liked));
 final playlistProvider =
     FutureProvider.autoDispose.family<TrackPage, String>((ref, id) => _keptPage(ref, 'playlist_$id', () => _api(ref).playlist(id)));
+/// Everyone else on the server, and their music (their Liked Songs aren't kept on this phone).
+final peopleProvider = FutureProvider.autoDispose<List<Person>>((ref) => _api(ref).people());
+final personProvider = FutureProvider.autoDispose.family<PersonPage, int>((ref, id) => _api(ref).person(id));
+final personLikedProvider = FutureProvider.autoDispose.family<TrackPage, int>((ref, id) => _api(ref).personLiked(id));
 final albumProvider =
     FutureProvider.autoDispose.family<TrackPage, String>((ref, id) => _keptPage(ref, 'album_$id', () => _api(ref).album(id)));
 final artistProvider = FutureProvider.autoDispose.family<ArtistPage, String>((ref, name) => _api(ref).artist(name));
@@ -67,7 +71,9 @@ final discographyProvider = FutureProvider.autoDispose.family<Discography, Strin
   return _api(ref).discography(int.parse(key.substring(0, i)), key.substring(i + 1));
 });
 final genresProvider = FutureProvider<List<Genre>>((ref) => _api(ref).genres());
-final genreChartProvider = FutureProvider.autoDispose.family<List<CatalogItem>, int>((ref, id) => _api(ref).genreChart(id));
+/// A genre's popular songs: right now (era null), or the most popular of a decade ("80s").
+final genreChartProvider = FutureProvider.autoDispose.family<List<CatalogItem>, (int, String?)>(
+    (ref, key) => _api(ref).genreChart(key.$1, era: key.$2));
 final requestsProvider = FutureProvider.autoDispose<List<Track>>((ref) => _api(ref).requests());
 final requestProgressProvider = FutureProvider.autoDispose<DownloadProgress?>((ref) => _api(ref).requestProgress());
 final meProvider = FutureProvider.autoDispose<Me>((ref) => _api(ref).me());
@@ -108,7 +114,7 @@ extension RefreshLibrary on WidgetRef {
     for (final p in [homeProvider, libraryProvider, likedProvider, requestsProvider, requestProgressProvider]) {
       invalidate(p);
     }
-    for (final f in [playlistProvider, searchProvider, catalogProvider, genreChartProvider, albumProvider, artistProvider]) {
+    for (final f in [playlistProvider, searchProvider, catalogProvider, genreChartProvider, albumProvider, artistProvider, personLikedProvider]) {
       invalidate(f);
     }
   }

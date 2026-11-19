@@ -24,10 +24,10 @@ import 'search_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-enum _Kind { playlist, album, liked, downloads }
+enum _Kind { playlist, album, liked, theirLiked, downloads }
 
 /// A list of songs with a header, Play / Shuffle and offline download: used for playlists,
-/// albums, Liked Songs and Downloads.
+/// albums, Liked Songs, someone else's Liked Songs and Downloads.
 class TrackListScreen extends ConsumerWidget {
   const TrackListScreen.playlist(this.id, this.title, {super.key}) : _kind = _Kind.playlist;
   const TrackListScreen.album(this.id, this.title, {super.key}) : _kind = _Kind.album;
@@ -35,6 +35,11 @@ class TrackListScreen extends ConsumerWidget {
       : id = '',
         title = 'Liked Songs',
         _kind = _Kind.liked;
+  /// Someone else's Liked Songs (person [personId]), to play: not to change.
+  const TrackListScreen.theirLiked(int personId, String name, {super.key})
+      : id = '$personId',
+        title = '$name\'s Liked Songs',
+        _kind = _Kind.theirLiked;
   const TrackListScreen.downloads({super.key})
       : id = '',
         title = 'Downloads',
@@ -51,17 +56,19 @@ class TrackListScreen extends ConsumerWidget {
       _Kind.playlist => ref.watch(playlistProvider(id)),
       _Kind.album => ref.watch(albumProvider(id)),
       _Kind.liked => ref.watch(likedProvider),
+      _Kind.theirLiked => ref.watch(personLikedProvider(int.parse(id))),
       _Kind.downloads => AsyncData(TrackPage(total: offline.downloads.length, tracks: offline.downloads.values.toList().reversed.toList())),
     };
     void refresh() => switch (_kind) {
           _Kind.playlist => ref.invalidate(playlistProvider(id)),
           _Kind.album => ref.invalidate(albumProvider(id)),
           _Kind.liked => ref.invalidate(likedProvider),
+          _Kind.theirLiked => ref.invalidate(personLikedProvider(int.parse(id))),
           _Kind.downloads => null,
         };
     final page = value.value;
     final editable = _kind == _Kind.playlist && page != null && page.editable;
-    final sortKey = switch (_kind) { _Kind.playlist => 'playlist_$id', _Kind.liked => 'liked', _ => null };
+    final sortKey = switch (_kind) { _Kind.playlist => 'playlist_$id', _Kind.liked => 'liked', _Kind.theirLiked => 'person_$id', _ => null };
     final sort = sortKey == null ? ListSort.none : ref.watch(listSortsProvider)[sortKey] ?? ListSort.none;
     return Scaffold(
       body: Stack(children: [
@@ -77,6 +84,19 @@ class TrackListScreen extends ConsumerWidget {
         ),
         _BackButton(
           actions: [
+            // someone else's playlist or Liked Songs: a copy of your own, to change
+            if ((_kind == _Kind.playlist && page != null && !page.editable || _kind == _Kind.theirLiked && page != null) && !page.offline)
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_horiz_rounded),
+                color: surface,
+                onSelected: (_) => _copy(context, ref),
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'copy',
+                    child: Text(_kind == _Kind.theirLiked ? 'Copy to your playlists' : 'Make a copy you can edit'),
+                  ),
+                ],
+              ),
             if (_kind == _Kind.liked && page != null && page.tracks.length > 1 && !page.offline)
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_horiz_rounded),
@@ -122,9 +142,10 @@ class TrackListScreen extends ConsumerWidget {
             ? '${tracks.length} songs · ${formatBytes(offline.downloadBytes)}'
             : page.offline
             ? 'Offline · ${tracks.length} song${tracks.length == 1 ? '' : 's'} on this ${DesktopWindow.device} · pull down to try again'
-            : '${page.total} songs · ${formatLength(total)}${waiting > 0 ? ' · $waiting still downloading to server' : ''}';
+            : '${_kind == _Kind.playlist && !page.editable && page.owner != null ? '${page.owner}\'s playlist · ' : ''}'
+                '${page.total} songs · ${formatLength(total)}${waiting > 0 ? ' · $waiting still downloading to server' : ''}';
     final art = switch (_kind) {
-      _Kind.liked => const LikedCover(size: 170, radius: 85),
+      _Kind.liked || _Kind.theirLiked => const LikedCover(size: 170, radius: 85),
       _Kind.downloads => Container(
           width: 170,
           height: 170,
@@ -142,7 +163,7 @@ class TrackListScreen extends ConsumerWidget {
     return SizedBox(
       height: 430 + MediaQuery.paddingOf(context).top,
       child: Stack(children: [
-        if (cover != null && _kind != _Kind.liked && _kind != _Kind.downloads)
+        if (cover != null && _kind != _Kind.liked && _kind != _Kind.theirLiked && _kind != _Kind.downloads)
           Positioned.fill(
             child: ShaderMask(
               blendMode: BlendMode.dstIn,
@@ -160,7 +181,7 @@ class TrackListScreen extends ConsumerWidget {
               ),
             ),
           ),
-        if (_kind == _Kind.liked) ...[
+        if (_kind == _Kind.liked || _kind == _Kind.theirLiked) ...[
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -325,6 +346,21 @@ class TrackListScreen extends ConsumerWidget {
       ),
       const SliverToBoxAdapter(child: SizedBox(height: 190)),
     ]);
+  }
+
+  /// Copy someone else's playlist (or Liked Songs) into your own playlists, then open the copy.
+  Future<void> _copy(BuildContext context, WidgetRef ref) async {
+    final api = ref.read(apiProvider);
+    if (api == null) return;
+    try {
+      final copy = _kind == _Kind.theirLiked ? await api.copyPersonLiked(int.parse(id)) : await api.copyPlaylist(id);
+      ref.refreshLibrary();
+      if (!context.mounted) return;
+      toast(context, 'Copied to your playlists: change it as you like');
+      push(context, TrackListScreen.playlist(copy.info['id'] as String, copy.name));
+    } catch (e) {
+      if (context.mounted) toast(context, "Couldn't copy it: $e");
+    }
   }
 
   /// What Smart Shuffle knows this list as (a playlist or Liked Songs; not albums or downloads).

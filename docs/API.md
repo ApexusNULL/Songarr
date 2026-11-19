@@ -81,12 +81,13 @@ Only `playable` songs can be streamed. Cover URLs are public CDN images, so load
 | `POST /library/liked/move` `{from, to, track_id}` | `{ok}`. Moves a song within your Liked Songs (409 if the list changed meanwhile). Without `from`, the song `track_id` moves from wherever it is (404 if it isn't there) |
 | `PUT /library/order` `{playlist_ids: [...]}` | the library, with playlists in that order (your own arrangement; ids you don't have are ignored). Playlists not in it, like new ones, are listed first |
 | `GET /library/liked?offset=&limit=` | `{total, offset, tracks}` (up to 500 per page), newest like first, or in your order once you've moved something (songs liked since then come first). Each track also has `added_at` (when it was liked, Unix seconds) |
-| `GET /playlists/{id}?offset=&limit=` | `{id, name, kind, editable, owner, image_url, total, offset, tracks}`; each track also has `added_at` (when it was added to the playlist, Unix seconds) |
+| `GET /playlists/{id}?offset=&limit=` | `{id, name, kind, editable, owner, owner_id, image_url, total, offset, tracks}`; each track also has `added_at` (when it was added to the playlist, Unix seconds). Someone else's playlist opens too while they share their music (`editable: false`: changing it answers 403); otherwise 404 |
 | `POST /playlists` `{name, description?}` | new app playlist |
 | `PATCH /playlists/{id}` `{name?, description?}` | playlist |
 | `DELETE /playlists/{id}` | `{ok}` |
 | `POST /playlists/{id}/tracks` `{track_ids: [...]}` | `{added}`; appends; unknown IDs are skipped |
 | `DELETE /playlists/{id}/tracks/{position}` | `{ok}`; later positions shift up |
+| `POST /playlists/{id}/copy` | A copy of a playlist you can see (someone else's, or your own) as a new playlist of yours, same name and songs. Returns it (as `GET /playlists/{id}`) |
 | `POST /playlists/{id}/tracks/move` `{from, to, track_id}` | `{ok}`. Moves the song at `from` to `to`. `track_id` is the song you mean: if the playlist changed meanwhile, nothing moves (409). Without `from`, the song `track_id` moves from wherever it is (404 if it isn't there): Now Playing's **Move to the top** |
 | `PUT /likes/{track_id}` | `{liked: true}` |
 | `DELETE /likes/{track_id}` | `{liked: false, on_spotify: false}` (`on_spotify` is always false: apps up to 1.8 expect it) |
@@ -108,7 +109,7 @@ Only `playable` songs can be streamed. Cover URLs are public CDN images, so load
 | `GET /requests` | `{requests: [track], progress}`, your requests, newest first (asking for a song again makes it the newest), and `progress` as below |
 | `GET /requests/progress` | `{progress}`: how the songs you added are getting on, for progress bars; small, to ask every few seconds while they're shown. `null` when nothing of yours is on its way, otherwise `{total, ready, waiting, later, stuck, active: [{id, title, artists, thumb_url, stage, percent}], next, paused, eta}`. It counts everything you've asked for since the oldest of your songs still on its way (adding more makes it bigger; songs already on the server when asked for aren't counted). `later`: failed, tried again later; `stuck`: need a match picked or weren't found. `stage` is `finding`, `waiting` (YouTube's pace), `downloading` (with `percent`) or `finishing`. `next`: `{title, artists}` of the song that goes next. `paused`: `{reason, until}` (epoch seconds or null) while nothing downloads for anyone. `eta`: seconds until the last of them, roughly (null while paused with no end in sight) |
 | `GET /discover/genres` | `{genres: [{id, name, image}]}` (Deezer genres; 0 = all) |
-| `GET /discover/genres/{id}?limit=` | `{genre_id, tracks: [chart entry with in_library/status]}`: popular songs in that genre |
+| `GET /discover/genres/{id}?era=&limit=` | `{genre_id, era, eras, tracks: [chart entry with in_library/status]}`: popular songs in that genre right now, or with `era` (one of `eras`: `60s`, `70s`, `80s`, `90s`, `00s`, `10s`, `20s`) the most popular of that decade, from Deezer's editors' playlists for it, most popular first (empty when Deezer has none). 400 for another era |
 | `GET /podcasts` | `{following: [podcast], continue: [episode] (partly heard), new_episodes: [episode] (last 3 weeks, unheard), recommended: [podcast + reason]}`. Following = the shows you follow |
 | `GET /podcasts/search?q=` | `{results: [podcast]}` from the Apple Podcasts directory |
 | `GET /podcasts/{id}?limit=` | podcast + `{description, website, on_spotify (always false), stale, downloads, episodes: [episode with description]}`; re-reads the feed if it's over 30 minutes old (`stale: true` when that failed) |
@@ -125,9 +126,13 @@ Only `playable` songs can be streamed. Cover URLs are public CDN images, so load
 | `GET /releases?limit=` | `{releases: [album]}`: releases from the artists you follow from the last 60 days, newest first. Each album is as in `GET /catalog/albums` plus `release_date`; open it with `GET /catalog/albums/deezer/{id}` |
 | `GET /notifications?limit=` | `{notifications: [{id, kind, title, body, created, read, …}], unread}`, newest first. `kind` `release` carries `album` (as in `catalog/albums`); `discography` carries `artist` (a name) and `image_url`; `downloads` (several songs you added are in) carries `requests: true` |
 | `POST /notifications/read` `{ids?}` | Mark these (or all) read; returns `{unread}` |
-| `GET /account` | `{name, login, has_password}` |
+| `GET /account` | `{name, login, has_password, share_music}` |
 | `POST /account/password` `{login, password, current?}` | Set or change this profile's sign-in name and password (8+ characters). Changing an existing password needs `current` (403 if wrong). Returns `{name, login, has_password}` |
-| `GET /people` | `{people: [{id, name}]}`: the other profiles, to invite to a Jam |
+| `POST /account/sharing` `{share}` | Let the others on the server see your Liked Songs and playlists (`true`, the default) or not. Returns the account |
+| `GET /people` | `{people: [{id, name, shares, liked, playlists}]}`: the other profiles (to invite to a Jam, or to see what they like), with how many liked songs and playlists each has (0 when they don't share) |
+| `GET /people/{id}` | `{id, name, liked: {count}, playlists: [as in /library, editable false]}`. 403 when they keep their music to themselves |
+| `GET /people/{id}/liked?offset=&limit=` | Their Liked Songs in their order: `{name, owner, owner_id, total, offset, tracks}` (`liked` on each song is whether *you* like it; `added_at` is when they liked it). 403 as above |
+| `POST /people/{id}/liked/copy` | Their Liked Songs copied as a new playlist of yours ("Sam's Liked Songs"). Returns it. 403 as above |
 | `POST /jams` `{items, index, position_ms, playing, invite: [user id]}` | Start a Jam (listening together) and invite people: returns the jam. `items` is the list to play, `[{track_id} or {episode_id}]` (songs not on the server are dropped, so send playable ones and an `index` into that list). You leave any other Jam |
 | `GET /jams/current` | `{jam (or null), invites: [{id, from, members, item}], server_time}` |
 | `GET /jams/{id}?v=&wait=` | the jam. With `v` (the version you have) and `wait` (seconds, up to 25) it waits until something changes: a long poll |

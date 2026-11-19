@@ -559,6 +559,15 @@ deletes song files on its own: when someone unlikes a song, it only leaves *thei
   [Deezer](https://developers.deezer.com/api) and the year each recording first came out from
   [MusicBrainz](https://musicbrainz.org) (so a remaster counts as the original's era); the server looks
   them up in the background, about a song a second.
+- **People** (Your Library → People): everyone else on the server, each with a page of their Liked
+  Songs and playlists to look through and play (with the genre cards too), though only they can change
+  them. **Make a copy you can edit** (the ⋯ on someone's playlist) makes it a playlist of your own;
+  their Liked Songs can be copied as one too. Anyone who'd rather keep theirs private turns off
+  **Settings → Share your music**.
+- **Popular by genre, by era** (Search → a genre): what's popular right now, or pick a decade (60s to
+  20s) for its most popular songs, such as 80s Rap, from the playlists Deezer's own editors make for
+  each genre and decade, ranked by how popular each song is. Songs not on the server yet can be
+  previewed and added, one by one or all at once.
 - **Smart Shuffle** (the ✦ button on a playlist or Liked Songs, or tap shuffle in Now Playing until it
   sparkles): after every two of the list's songs comes one you're likely to love next, marked ✦ with
   why ("More from Queen", "Loved by Sam"). The server picks them from what it can tell: how well a song

@@ -63,12 +63,74 @@ def _track(t: dict) -> dict:
         "cover_url": album.get("cover_xl") or album.get("cover_big"),
         "thumb_url": album.get("cover_medium") or album.get("cover_small"),
         "rank": t.get("rank"),
+        "isrc": t.get("isrc"),  # (playlists' songs have it; charts' don't)
     }
 
 
 def genre_chart(genre_id: int, limit: int = 50) -> list[dict]:
     data = _get(f"/chart/{int(genre_id)}/tracks?limit={min(100, int(limit))}", 6 * 3600)
     return [_track(t) for t in data.get("data", [])]
+
+
+# The decades a genre's popular songs can be picked from: what to search Deezer for, and how a
+# playlist's title says it's that decade ("80's Rap", "'90s Rap", "2000s Rap", "'10s Rap").
+ERAS = {
+    "60s": ("60s", r"(?<!\d)(19)?60s|sixties"),
+    "70s": ("70s", r"(?<!\d)(19)?70s|seventies"),
+    "80s": ("80s", r"(?<!\d)(19)?80s|eighties"),
+    "90s": ("90s", r"(?<!\d)(19)?90s|nineties"),
+    "00s": ("2000s", r"(?<!\d)(20)?00s|noughties"),
+    "10s": ("2010s", r"(?<!\d)(20)?10s"),
+    "20s": ("2020s", r"(?<!\d)(20)?20s"),
+}
+# Deezer's genre names, as playlists put them (the first is searched for; any of them in a title counts)
+GENRE_WORDS = {
+    "All": ["hits"], "Rap/Hip Hop": ["rap", "hip hop", "hip-hop"], "R&B": ["r&b", "rnb"], "Soul & Funk": ["soul", "funk"],
+    "Electro": ["electronic", "electro", "edm"], "Films/Games": ["movie", "soundtrack", "film"], "Latin Music": ["latin"],
+    "Asian Music": ["k-pop", "asian"], "African Music": ["afro", "african"], "Brazilian Music": ["brazil", "mpb"],
+    "Indian Music": ["bollywood", "indian"], "Traditional Mexicano": ["mexican", "mexicano", "regional"],
+    "Alternative": ["alternative", "indie"], "Dance": ["dance", "club"], "Christian": ["christian", "gospel", "worship"],
+}
+
+
+def _playlist_title(s: str) -> str:
+    return s.lower().replace("\u2019", "'").replace("'", "")
+
+
+def genre_era(genre_id: int, era: str, limit: int = 50) -> list[dict]:
+    """The most popular songs of one genre from one decade ("80s" Rap): the songs of Deezer's own
+    playlists for it ("80's Rap" by its rap editor), or failing those the closest listeners' ones,
+    put together and ranked by how popular each song is on Deezer."""
+    if era not in ERAS:
+        raise ValueError(f"No such era: {era}")
+    names = {g["id"]: g["name"] for g in genres()}
+    name = "All" if int(genre_id) == 0 else names.get(int(genre_id))
+    if name is None:
+        raise RuntimeError("Deezer: no such genre")
+    words = GENRE_WORDS.get(name) or [name.lower()]
+    searched, decade = ERAS[era]
+    decade_re = re.compile(decade)
+    ours, theirs = [], []  # Deezer's own playlists, listeners'
+    for word in words[:2]:
+        found = _get(f"/search/playlist?q={urllib.parse.quote(f'{searched} {word}')}&limit=25", 24 * 3600).get("data") or []
+        for p in found:
+            title = _playlist_title(p.get("title") or "")
+            if not decade_re.search(title) or (name != "All" and not any(w in title for w in words)):
+                continue
+            if p["id"] in [x["id"] for x in ours + theirs]:
+                continue
+            (ours if "deezer" in ((p.get("user") or {}).get("name") or "").lower() else theirs).append(p)
+    picked = ours[:3] or theirs[:2]
+    songs: dict[str, dict] = {}
+    for p in picked:
+        for t in (_get(f"/playlist/{p['id']}/tracks?limit=100", 24 * 3600).get("data") or []):
+            if not t.get("readable", True) or not t.get("id"):
+                continue
+            key = song_key([(t.get("artist") or {}).get("name") or ""], t.get("title") or "")
+            if key not in songs or (t.get("rank") or 0) > (songs[key].get("rank") or 0):
+                songs[key] = t
+    ranked = sorted(songs.values(), key=lambda t: -(t.get("rank") or 0))
+    return [_track(t) for t in ranked[: min(100, int(limit))]]
 
 
 def search(query: str, limit: int = 20) -> list[dict]:

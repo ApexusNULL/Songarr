@@ -47,6 +47,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ]),
         _Section('Signing in', [const _PasswordTile()]),
+        _Section('Sharing', [const _ShareTile()]),
         _Section('Storage on this device', [
           ListTile(
             leading: const GradientMask(child: Icon(Icons.download_done_rounded)),
@@ -290,6 +291,45 @@ class _PasswordFormState extends ConsumerState<_PasswordForm> {
           ]),
         ),
       ),
+    );
+  }
+}
+
+/// Whether others on the server can see your Liked Songs and playlists (Library → People).
+class _ShareTile extends ConsumerStatefulWidget {
+  const _ShareTile();
+  @override
+  ConsumerState<_ShareTile> createState() => _ShareTileState();
+}
+
+class _ShareTileState extends ConsumerState<_ShareTile> {
+  bool? _saving; // the choice being saved, shown at once
+
+  @override
+  Widget build(BuildContext context) {
+    final account = ref.watch(accountProvider).value;
+    final on = _saving ?? account?.shareMusic ?? true;
+    return SwitchListTile(
+      secondary: const GradientMask(child: Icon(Icons.groups_rounded)),
+      title: const Text('Share your music', style: TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text(on
+          ? 'Others on this server can see and play your Liked Songs and playlists (Library → People)'
+          : 'Your Liked Songs and playlists are just for you'),
+      value: on,
+      onChanged: account == null || _saving != null
+          ? null
+          : (v) async {
+              setState(() => _saving = v);
+              try {
+                await ref.read(apiProvider)!.setSharing(v);
+                ref.invalidate(accountProvider);
+                await ref.read(accountProvider.future);
+              } catch (e) {
+                if (context.mounted) toast(context, "Couldn't change that: $e");
+              } finally {
+                if (mounted) setState(() => _saving = null);
+              }
+            },
     );
   }
 }

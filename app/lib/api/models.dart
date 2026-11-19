@@ -105,6 +105,8 @@ class TrackPage {
   String get name => info['name'] as String? ?? '';
   String? get imageUrl => (info['image_url'] ?? info['cover_url']) as String?;
   bool get editable => info['editable'] == true;
+  /// Whose list it is, for someone else's (shown as "Sam's playlist").
+  String? get owner => info['owner'] as String?;
   /// The copy kept on this phone, shown while no server can be reached (only the songs on the phone).
   bool get offline => info['offline'] == true;
 
@@ -580,11 +582,28 @@ class Lyrics {
 
 // -- Jams: listening together ---------------------------------------------------------------
 
+/// Someone else on the server: to invite to a Jam, or to see what they like.
 class Person {
-  Person(this.id, this.name);
+  Person(this.id, this.name, {this.shares = true, this.likedCount = 0, this.playlistCount = 0});
   final int id;
   final String name;
-  factory Person.fromJson(Map j) => Person((j['id'] as num).toInt(), j['name'] as String? ?? '');
+  /// Whether they let others see their Liked Songs and playlists (Settings → Share your music).
+  final bool shares;
+  final int likedCount;
+  final int playlistCount;
+  factory Person.fromJson(Map j) => Person((j['id'] as num).toInt(), j['name'] as String? ?? '',
+      shares: j['shares'] != false, likedCount: (j['liked'] as num?)?.toInt() ?? 0, playlistCount: (j['playlists'] as num?)?.toInt() ?? 0);
+}
+
+/// Someone's music: how many songs they like, and their playlists (to look at and play).
+class PersonPage {
+  PersonPage(this.id, this.name, this.likedCount, this.playlists);
+  final int id;
+  final String name;
+  final int likedCount;
+  final List<PlaylistSummary> playlists;
+  factory PersonPage.fromJson(Map<String, dynamic> j) => PersonPage((j['id'] as num).toInt(), j['name'] as String? ?? '',
+      (j['liked']['count'] as num).toInt(), [for (final p in j['playlists'] as List) PlaylistSummary(p as Map<String, dynamic>)]);
 }
 
 /// A Jam's shared timeline: "at server time [ref], [current] is at [position]".
@@ -628,6 +647,8 @@ class Account {
   String get name => json['name'] as String? ?? '';
   String? get login => json['login'] as String?;
   bool get hasPassword => json['has_password'] == true;
+  /// Others on the server can see this profile's Liked Songs and playlists.
+  bool get shareMusic => json['share_music'] != false;
 }
 
 /// An album from the catalogue (Deezer), to add whole: a soundtrack, a film score, a live album…

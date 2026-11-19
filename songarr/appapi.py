@@ -419,17 +419,20 @@ class AppAPI:
 
     def library(self, user: dict, q: dict, body: dict) -> dict:
         uid = user["id"]
+        return {"liked": {"count": len(self.liked_ids(uid))}, "playlists": self._playlists_of(uid, user["name"], editable=True)}
+
+    def _playlists_of(self, uid: int, owner: str, editable: bool) -> list[dict]:
+        """[uid]'s playlists, in their own arrangement (ones they haven't placed yet, new ones, first)."""
         out = []
         for r in self.db.q("""SELECT p.*, COUNT(t.track_id) AS n FROM user_playlists p
                               LEFT JOIN user_playlist_tracks t ON t.playlist_id = p.id
                               WHERE p.user_id = ? GROUP BY p.id ORDER BY p.updated DESC, p.name COLLATE NOCASE""", (uid,)):
-            out.append({"id": r["id"], "name": r["name"], "kind": "app", "owner": user["name"], "description": r["description"],
-                        "image_url": r["image_url"], "count": r["n"], "editable": True, "from_spotify": bool(r["source_id"])})
-        # the person's own arrangement; playlists they haven't placed yet (new ones) go first
+            out.append({"id": r["id"], "name": r["name"], "kind": "app", "owner": owner, "description": r["description"],
+                        "image_url": r["image_url"], "count": r["n"], "editable": editable, "from_spotify": bool(r["source_id"])})
         order = {r[0]: r[1] for r in self.db.q("SELECT playlist_id, position FROM playlist_order WHERE user_id = ?", (uid,))}
         if order:
             out = [p for p in out if p["id"] not in order] + sorted((p for p in out if p["id"] in order), key=lambda p: order[p["id"]])
-        return {"liked": {"count": len(self.liked_ids(uid))}, "playlists": out}
+        return out
 
     def set_playlist_order(self, user: dict, q: dict, body: dict) -> dict:
         """Arrange the playlists in your library: `playlist_ids` in the order you want them."""
@@ -486,23 +489,28 @@ class AppAPI:
         return _int(body.get("from"), -1, -1, 10**6)
 
     def _playlist_access(self, uid: int, pid: str) -> str:
-        if self.db.one("SELECT 1 FROM user_playlists WHERE id = ? AND user_id = ?", (pid, uid)):
+        """"app" for your own playlist; "shared" for someone else's when they share their music (to
+        look at and play, not to change); otherwise 404."""
+        row = self.db.one("SELECT p.user_id, u.share_music FROM user_playlists p JOIN users u ON u.id = p.user_id WHERE p.id = ?", (pid,))
+        if row and row[0] == uid:
             return "app"
+        if row and row[1]:
+            return "shared"
         raise ApiError(404, "No such playlist.")
 
     def playlist(self, user: dict, q: dict, body: dict, pid: str) -> dict:
         if not pid.startswith("up"):  # an older app remembering a Spotify playlist: show their own copy of it
             copy = self.db.one("SELECT id FROM user_playlists WHERE user_id = ? AND source_id = ?", (user["id"], pid))
             pid = copy[0] if copy else pid
-        self._playlist_access(user["id"], pid)
+        mine = self._playlist_access(user["id"], pid) == "app"
         offset, limit = _int(q.get("offset"), 0, 0, 10**6), _int(q.get("limit"), 100, 1, 500)
-        meta = self.db.one("SELECT * FROM user_playlists WHERE id = ?", (pid,))
+        meta = self.db.one("SELECT p.*, u.name AS owner FROM user_playlists p JOIN users u ON u.id = p.user_id WHERE p.id = ?", (pid,))
         rows = self.db.q("SELECT track_id, added_at FROM user_playlist_tracks WHERE playlist_id = ? ORDER BY position", (pid,))
         ids, added = [r[0] for r in rows], {}
         for tid, at in rows:
             added.setdefault(tid, at)  # (a song in it twice: when it was first added)
-        info = {"id": pid, "name": meta["name"], "description": meta["description"], "kind": "app", "editable": True,
-                "owner": user["name"], "image_url": meta["image_url"], "from_spotify": bool(meta["source_id"])}
+        info = {"id": pid, "name": meta["name"], "description": meta["description"], "kind": "app", "editable": mine,
+                "owner": meta["owner"], "owner_id": meta["user_id"], "image_url": meta["image_url"], "from_spotify": bool(meta["source_id"])}
         return info | {"total": len(ids), "offset": offset,
                        "tracks": self._added(self.tracks_by_ids(ids[offset: offset + limit], user["id"]), added)}
 
@@ -516,9 +524,33 @@ class AppAPI:
                     (pid, user["id"], name, str(body.get("description") or "")[:500] or None, now, now))
         return self.playlist(user, {}, {}, pid)
 
+    def copy_playlist(self, user: dict, q: dict, body: dict, pid: str) -> dict:
+        """A copy of a playlist (someone else's, or your own) as a new playlist of yours, to change as
+        you like. Returns it."""
+        self._playlist_access(user["id"], pid)
+        meta = self.db.one("SELECT name, description, image_url FROM user_playlists WHERE id = ?", (pid,))
+        ids = [r[0] for r in self.db.q("SELECT track_id FROM user_playlist_tracks WHERE playlist_id = ? ORDER BY position", (pid,))]
+        return self._new_playlist(user, meta["name"], meta["description"], meta["image_url"], ids)
+
+    def copy_person_liked(self, user: dict, q: dict, body: dict, pid: str) -> dict:
+        """Someone's Liked Songs, copied as a new playlist of yours ("Sam's Liked Songs")."""
+        p = self._person(pid)
+        return self._new_playlist(user, f"{p['name']}'s Liked Songs", None, None, self.db.liked_list(p["id"]))
+
+    def _new_playlist(self, user: dict, name: str, description: str | None, image_url: str | None, ids: list[str]) -> dict:
+        pid, now = "up" + secrets.token_hex(8), time.time()
+        with self.db.tx() as c:
+            c.execute("""INSERT INTO user_playlists(id, user_id, name, description, image_url, created, updated)
+                         VALUES (?,?,?,?,?,?,?)""", (pid, user["id"], name[:100], description, image_url, now, now))
+            c.executemany("INSERT INTO user_playlist_tracks(playlist_id, position, track_id, added_at) VALUES (?,?,?,?)",
+                          [(pid, n, tid, now) for n, tid in enumerate(ids)])
+            c.executemany("INSERT OR IGNORE INTO track_sources(track_id, source) VALUES (?, ?)", [(tid, f"up:{pid}") for tid in set(ids)])
+        self.db.recompute_monitored()
+        return self.playlist(user, {"limit": "1"}, {}, pid)
+
     def _own_playlist(self, user: dict, pid: str) -> None:
         if self._playlist_access(user["id"], pid) != "app":
-            raise ApiError(403, "That playlist can't be changed.")
+            raise ApiError(403, "That's someone else's playlist: only they can change it.")
 
     def update_playlist(self, user: dict, q: dict, body: dict, pid: str) -> dict:
         self._own_playlist(user, pid)
@@ -796,9 +828,46 @@ class AppAPI:
     # -- Jams: listening together -----------------------------------------------------------
 
     def people(self, user: dict, q: dict, body: dict) -> dict:
-        """The other family profiles, to invite to a Jam."""
-        return {"people": [{"id": r["id"], "name": r["name"]} for r in
-                           self.db.q("SELECT id, name FROM users WHERE id != ? ORDER BY name COLLATE NOCASE", (user["id"],))]}
+        """The other family profiles (to invite to a Jam, or to see what they like): with how many liked
+        songs and playlists they have, when they share their music."""
+        likes = dict(self.db.q("SELECT user_id, COUNT(*) FROM likes GROUP BY user_id"))
+        lists = dict(self.db.q("SELECT user_id, COUNT(*) FROM user_playlists GROUP BY user_id"))
+        return {"people": [{"id": r["id"], "name": r["name"], "shares": bool(r["share_music"]),
+                            "liked": likes.get(r["id"], 0) if r["share_music"] else 0,
+                            "playlists": lists.get(r["id"], 0) if r["share_music"] else 0} for r in
+                           self.db.q("SELECT id, name, share_music FROM users WHERE id != ? ORDER BY name COLLATE NOCASE", (user["id"],))]}
+
+    def _person(self, pid: str) -> dict:
+        """Someone on the server, to look at their music: 404 if there's no such profile, 403 if they
+        keep their music to themselves."""
+        row = self.db.one("SELECT id, name, share_music FROM users WHERE id = ?", (int(pid),))
+        if not row:
+            raise ApiError(404, "No such person.")
+        if not row["share_music"]:
+            raise ApiError(403, f"{row['name']} keeps their music to themselves.")
+        return dict(row)
+
+    def person(self, user: dict, q: dict, body: dict, pid: str) -> dict:
+        """Someone's Liked Songs (how many) and playlists, to look at and play."""
+        p = self._person(pid)
+        return {"id": p["id"], "name": p["name"], "liked": {"count": len(self.db.liked_list(p["id"]))},
+                "playlists": self._playlists_of(p["id"], p["name"], editable=p["id"] == user["id"])}
+
+    def person_liked(self, user: dict, q: dict, body: dict, pid: str) -> dict:
+        """Someone's Liked Songs, in their order (`liked` on each song is whether you like it)."""
+        p = self._person(pid)
+        offset, limit = _int(q.get("offset"), 0, 0, 10**6), _int(q.get("limit"), 100, 1, 500)
+        ids = self.db.liked_list(p["id"])
+        added = dict(self.db.q("SELECT track_id, created FROM likes WHERE user_id = ?", (p["id"],)))
+        return {"name": f"{p['name']}'s Liked Songs", "owner": p["name"], "owner_id": p["id"], "total": len(ids), "offset": offset,
+                "tracks": self._added(self.tracks_by_ids(ids[offset: offset + limit], user["id"]), added)}
+
+    def set_sharing(self, user: dict, q: dict, body: dict) -> dict:
+        """Let others on the server see your Liked Songs and playlists (`share`: true), or not."""
+        if not isinstance(body.get("share"), bool):
+            raise ApiError(400, "share must be true or false.")
+        self.db.run("UPDATE users SET share_music = ? WHERE id = ?", (int(body["share"]), user["id"]))
+        return self.users.account(user["id"])
 
     def _names(self) -> dict[int, str]:
         return {r[0]: r[1] for r in self.db.q("SELECT id, name FROM users")}
@@ -1238,9 +1307,14 @@ class AppAPI:
         return {"genres": discover.genres()}
 
     def genre(self, user: dict, q: dict, body: dict, gid: str) -> dict:
-        items = [{"source": "deezer", "id": t["deezer_id"], "isrc": None} | t
-                 for t in discover.genre_chart(_int(gid, 0, 0, 10**9), _int(q.get("limit"), 50, 1, 100))]
-        return {"genre_id": int(gid), "tracks": self.annotate(items)}
+        """A genre's popular songs: right now (its Deezer chart), or with `era` ("80s", "00s"...) the
+        most popular of that decade."""
+        era, limit = q.get("era") or None, _int(q.get("limit"), 50, 1, 100)
+        if era is not None and era not in discover.ERAS:
+            raise ApiError(400, f"era must be one of {', '.join(discover.ERAS)}.")
+        found = discover.genre_era(_int(gid, 0, 0, 10**9), era, limit) if era else discover.genre_chart(_int(gid, 0, 0, 10**9), limit)
+        items = [{"source": "deezer", "id": t["deezer_id"], "isrc": None} | t for t in found]
+        return {"genre_id": int(gid), "era": era, "eras": list(discover.ERAS), "tracks": self.annotate(items)}
 
 
 class Server(ThreadingHTTPServer):
@@ -1280,6 +1354,7 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
     route("POST", r"/playlists/(up[0-9a-f]+)/tracks", api.add_to_playlist)
     route("DELETE", r"/playlists/(up[0-9a-f]+)/tracks/(\d+)", api.remove_from_playlist)
     route("POST", r"/playlists/(up[0-9a-f]+)/tracks/move", api.move_in_playlist)
+    route("POST", r"/playlists/([A-Za-z0-9]+)/copy", api.copy_playlist)
     route("PUT", r"/likes/([A-Za-z0-9]+)", api.like)
     route("DELETE", r"/likes/([A-Za-z0-9]+)", api.unlike)
     route("POST", "/plays", api.play)
@@ -1309,6 +1384,10 @@ def make_app_server(svc: Service, host: str, port: int) -> ThreadingHTTPServer:
     route("GET", "/podcasts/downloads", api.podcast_downloads)
     route("GET", "/app/update", api.app_update)
     route("GET", "/people", api.people)
+    route("GET", r"/people/(\d+)", api.person)
+    route("GET", r"/people/(\d+)/liked", api.person_liked)
+    route("POST", r"/people/(\d+)/liked/copy", api.copy_person_liked)
+    route("POST", "/account/sharing", api.set_sharing)
     route("POST", "/jams", api.start_jam)
     route("GET", "/jams/current", api.current_jam)
     route("GET", r"/jams/([0-9a-f]{12})", api.jam)

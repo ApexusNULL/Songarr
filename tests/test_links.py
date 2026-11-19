@@ -133,7 +133,7 @@ class RequestLinkTests(unittest.TestCase):
         self.svc.users.create("Sam")
         other = self.svc.db.one("SELECT id FROM users WHERE name = 'Sam'")[0]
         self.svc.db.run("UPDATE user_playlists SET user_id = ? WHERE id = ?", (other, self.pid))
-        self.assertEqual(error({"url": VIDEO, "playlist_id": self.pid})[0], 404)  # not yours (not even shown): nothing added
+        self.assertEqual(error({"url": VIDEO, "playlist_id": self.pid})[0], 403)  # someone else's: nothing added
         self.assertEqual(self.svc.db.one("SELECT COUNT(*) FROM tracks")[0], 0)
         self.svc.cooldown_until = time.time() + 600
         self.assertEqual(error({"url": VIDEO})[0], 503)

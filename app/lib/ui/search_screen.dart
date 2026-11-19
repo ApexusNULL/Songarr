@@ -521,13 +521,28 @@ class _CatalogTileState extends ConsumerState<CatalogTile> {
   }
 }
 
-class GenreScreen extends ConsumerWidget {
+/// A genre's popular songs, right now or the most popular of a decade: pick one of the pills
+/// (Now, 60s ... 20s). Songs not on the server yet can be previewed and added.
+class GenreScreen extends ConsumerStatefulWidget {
   const GenreScreen(this.genre, {super.key});
   final Genre genre;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final chart = ref.watch(genreChartProvider(genre.id));
+  ConsumerState<GenreScreen> createState() => _GenreScreenState();
+}
+
+const _eras = ['60s', '70s', '80s', '90s', '00s', '10s', '20s'];
+
+class _GenreScreenState extends ConsumerState<GenreScreen> {
+  String? _era; // null: popular right now
+
+  Genre get genre => widget.genre;
+  (int, String?) get _key => (genre.id, _era);
+  String get _name => genre.id == 0 ? 'songs' : genre.name;
+
+  @override
+  Widget build(BuildContext context) {
+    final chart = ref.watch(genreChartProvider(_key));
     return Scaffold(
       appBar: AppBar(
         leading: Padding(
@@ -539,15 +554,36 @@ class GenreScreen extends ConsumerWidget {
       body: RefreshIndicator(
         color: accent,
         backgroundColor: surface,
-        onRefresh: () async => ref.invalidate(genreChartProvider(genre.id)),
-        child: asyncView(chart, (items) {
+        onRefresh: () async => ref.invalidate(genreChartProvider(_key)),
+        child: Column(children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+            child: Row(children: [
+              for (final e in [null, ..._eras])
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterPill(label: e ?? 'Now', selected: _era == e, onTap: () => setState(() => _era = e)),
+                ),
+            ]),
+          ),
+          Expanded(child: asyncView(chart, (items) {
           final missing = items.where((i) => i.inLibrary == null).toList();
+          if (items.isEmpty) {
+            return ListView(children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(32, 40, 32, 0),
+                child: Text('Deezer has no picks of the most popular $_era $_name.',
+                    textAlign: TextAlign.center, style: const TextStyle(color: muted, height: 1.4)),
+              ),
+            ]);
+          }
           return ListView(padding: const EdgeInsets.only(bottom: 190), children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 16, 8),
               child: Row(children: [
                 Expanded(
-                  child: Text('Popular right now · ${items.length - missing.length} of ${items.length} in your library',
+                  child: Text('${_era == null ? 'Popular right now' : 'Most popular $_era $_name'} · ${items.length - missing.length} of ${items.length} in your library',
                       style: const TextStyle(color: muted)),
                 ),
                 if (missing.isNotEmpty)
@@ -561,12 +597,14 @@ class GenreScreen extends ConsumerWidget {
             for (var i = 0; i < items.length; i++)
               i < 14 ? FadeSlideIn(index: i, child: CatalogTile(item: items[i], rank: i + 1)) : CatalogTile(item: items[i], rank: i + 1),
           ]);
-        }, onRetry: () => ref.invalidate(genreChartProvider(genre.id)), loading: const ListSkeleton()),
+        }, onRetry: () => ref.invalidate(genreChartProvider(_key)), loading: const ListSkeleton())),
+        ]),
       ),
     );
   }
 
   Future<void> _requestAll(BuildContext context, WidgetRef ref, List<CatalogItem> items) async {
+    final key = _key;
     final api = ref.read(apiProvider);
     if (api == null) return;
     final ok = await showDialog<bool>(
@@ -590,7 +628,7 @@ class GenreScreen extends ConsumerWidget {
         // keep going: one unknown song shouldn't stop the rest
       }
     }
-    ref.invalidate(genreChartProvider(genre.id));
+    ref.invalidate(genreChartProvider(key));
     ref.invalidate(requestsProvider);
     if (context.mounted) toast(context, 'Added $added songs');
   }

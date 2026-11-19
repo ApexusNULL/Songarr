@@ -275,6 +275,21 @@ class SongarrApi {
   /// All your Liked Songs, in your order.
   Future<TrackPage> liked() => _whole('/library/liked');
 
+  /// Someone else's music: their playlists and how many songs they like (403 if they keep it to themselves).
+  Future<PersonPage> person(int id) async => PersonPage.fromJson(await _get('/people/$id'));
+
+  /// Someone else's Liked Songs, in their order.
+  Future<TrackPage> personLiked(int id) => _whole('/people/$id/liked');
+
+  /// A copy of a playlist (someone else's) as a new playlist of yours; returns it.
+  Future<TrackPage> copyPlaylist(String id) async => TrackPage.fromJson(await _send('POST', '/playlists/$id/copy'));
+
+  /// Someone's Liked Songs copied as a new playlist of yours ("Sam's Liked Songs"); returns it.
+  Future<TrackPage> copyPersonLiked(int id) async => TrackPage.fromJson(await _send('POST', '/people/$id/liked/copy'));
+
+  /// Let others on the server see your Liked Songs and playlists, or not.
+  Future<Account> setSharing(bool share) async => Account(await _send('POST', '/account/sharing', {'share': share}));
+
   /// A whole playlist.
   Future<TrackPage> playlist(String id) => _whole('/playlists/$id');
 
@@ -390,8 +405,10 @@ class SongarrApi {
           Genre((g['id'] as num).toInt(), g['name'] as String, g['image'] as String?),
       ];
 
-  Future<List<CatalogItem>> genreChart(int id) async =>
-      [for (final t in (await _get('/discover/genres/$id', {'limit': 50}))['tracks'] as List) CatalogItem(t as Map<String, dynamic>)];
+  /// A genre's popular songs: right now, or the most popular of an [era] ("80s", "00s"...).
+  Future<List<CatalogItem>> genreChart(int id, {String? era}) async => [
+        for (final t in (await _get('/discover/genres/$id', {'limit': 50, 'era': ?era}))['tracks'] as List) CatalogItem(t as Map<String, dynamic>)
+      ];
 
   // -- Jams --------------------------------------------------------------------------
 

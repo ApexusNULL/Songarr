@@ -316,8 +316,40 @@ class AppAPITests(unittest.TestCase):
         st, _, _ = self.call(self.kid_token, "POST", f"/api/v1/playlists/{pid}/tracks/move", {"to": 0, "track_id": ids[1]})
         self.assertEqual((st, order()), (200, [ids[1], ids[2], ids[0]]))  # by the song alone
         self.assertEqual(self.call(self.kid_token, "POST", f"/api/v1/playlists/{pid}/tracks/move", {"to": 0, "track_id": "nope"})[0], 404)
-        self.assertEqual(self.call(self.token, "POST", f"/api/v1/playlists/{pid}/tracks/move", {"from": 0, "to": 1})[0], 404)  # not yours (and not told it exists)
+        self.assertEqual(self.call(self.token, "POST", f"/api/v1/playlists/{pid}/tracks/move", {"from": 0, "to": 1})[0], 403)  # someone else's
         self.call(self.kid_token, "DELETE", f"/api/v1/playlists/{pid}")
+
+    def test_people_pages(self):
+        """Everyone on the server can see each other's Liked Songs and playlists (to play, not change),
+        unless they turn sharing off."""
+        me = next(p for p in self.get("/api/v1/people", self.kid_token)[1]["people"] if p["id"] == 1)
+        self.assertEqual((me["shares"], me["liked"] >= 2, me["playlists"] >= 1), (True, True, True))
+        page = self.get("/api/v1/people/1", self.kid_token)[1]
+        self.assertEqual(page["name"], me["name"])
+        self.assertIn("uproad", [p["id"] for p in page["playlists"]])
+        self.assertFalse(any(p["editable"] for p in page["playlists"]))
+        self.assertEqual(page["liked"]["count"], me["liked"])
+        liked = self.get("/api/v1/people/1/liked", self.kid_token)[1]
+        self.assertEqual([t["id"] for t in liked["tracks"]], [t["id"] for t in self.get("/api/v1/library/liked")[1]["tracks"]])  # in their order
+        self.assertFalse(any(t["liked"] for t in liked["tracks"]))  # (whether Kid likes them)
+        self.assertTrue(all(t["added_at"] for t in liked["tracks"]))
+        self.assertEqual((liked["owner_id"], liked["total"]), (1, me["liked"]))
+        self.assertEqual(self.call(self.kid_token, "POST", "/api/v1/smart-shuffle", {"list": "uproad"})[0], 200)
+        # sharing turned off: nothing on show
+        st, account, _ = self.call(self.token, "POST", "/api/v1/account/sharing", {"share": False})
+        self.assertEqual((st, account["share_music"]), (200, False))
+        try:
+            self.assertEqual(self.get("/api/v1/people/1", self.kid_token)[0], 403)
+            self.assertEqual(self.get("/api/v1/people/1/liked", self.kid_token)[0], 403)
+            self.assertEqual(self.get("/api/v1/playlists/uproad", self.kid_token)[0], 404)
+            me = next(p for p in self.get("/api/v1/people", self.kid_token)[1]["people"] if p["id"] == 1)
+            self.assertEqual((me["shares"], me["liked"], me["playlists"]), (False, 0, 0))
+            self.assertEqual(self.get("/api/v1/playlists/uproad")[0], 200)  # (still their own)
+        finally:
+            self.call(self.token, "POST", "/api/v1/account/sharing", {"share": True})
+        self.assertTrue(self.get("/api/v1/account")[1]["share_music"])
+        self.assertEqual(self.get("/api/v1/people/999", self.kid_token)[0], 404)
+        self.assertEqual(self.call(self.token, "POST", "/api/v1/account/sharing", {"share": "yes"})[0], 400)
 
     def test_arranging_playlists(self):
         made = [self.call(self.kid_token, "POST", "/api/v1/playlists", {"name": n})[1]["id"] for n in ("Road", "Gym", "Chill")]
@@ -441,7 +473,17 @@ class AppAPITests(unittest.TestCase):
         self.call(self.token, "DELETE", f"/api/v1/playlists/{pid}/tracks/0")
         self.assertEqual([t["id"] for t in self.get(f"/api/v1/playlists/{pid}")[1]["tracks"]], [f"{3:022d}"])
         self.assertEqual(self.call(self.token, "PATCH", f"/api/v1/playlists/{pid}", {"name": "Gym 2"})[1]["name"], "Gym 2")
-        self.assertEqual(self.get(f"/api/v1/playlists/{pid}", self.kid_token)[0], 404)  # private to its owner
+        # someone else's: Kid can look at it and play it, not change it; not at all while its owner keeps their music private
+        seen = self.get(f"/api/v1/playlists/{pid}", self.kid_token)
+        owner = self.svc.db.one("SELECT name FROM users WHERE id = 1")[0]
+        self.assertEqual((seen[0], seen[1]["editable"], seen[1]["owner"], seen[1]["owner_id"]), (200, False, owner, 1))
+        self.assertEqual(self.call(self.kid_token, "PATCH", f"/api/v1/playlists/{pid}", {"name": "Mine now"})[0], 403)
+        self.assertEqual(self.call(self.kid_token, "DELETE", f"/api/v1/playlists/{pid}")[0], 403)
+        self.svc.db.run("UPDATE users SET share_music = 0 WHERE id = 1")
+        try:
+            self.assertEqual(self.get(f"/api/v1/playlists/{pid}", self.kid_token)[0], 404)
+        finally:
+            self.svc.db.run("UPDATE users SET share_music = 1 WHERE id = 1")
         self.assertEqual(self.call(self.token, "POST", "/api/v1/playlists/plroad/tracks", {"track_ids": []})[0], 404)
         self.call(self.token, "DELETE", f"/api/v1/playlists/{pid}")
         self.assertEqual(self.get(f"/api/v1/playlists/{pid}")[0], 404)
@@ -509,6 +551,60 @@ class AppAPITests(unittest.TestCase):
             self.assertEqual(track["id"], f"{77:022d}")  # the song the server already has, found by its ISRC
         finally:
             discover._get = orig
+
+    def test_popular_by_era(self):
+        """A genre's most popular songs of a decade: from Deezer's own playlists for it, ranked."""
+        song = lambda i, title, artist, rank, **kw: {"id": i, "title": title, "artist": {"name": artist}, "album": {"title": "A"},  # noqa: E731
+                                                     "duration": 200, "rank": rank} | kw
+        fake = {
+            "/genre": {"data": [{"id": 0, "name": "All"}, {"id": 152, "name": "Rock"}]},
+            "/search/playlist?q=80s%20rock&limit=25": {"data": [
+                {"id": 1, "title": "80s Rock Anthems", "user": {"name": "Someone"}},  # a listener's: not while Deezer has its own
+                {"id": 2, "title": "70s Rock", "user": {"name": "Rod - Deezer Rock Editor"}},  # another decade
+                {"id": 3, "title": "80's Pop", "user": {"name": "Laeti - Deezer Pop Editor"}},  # another genre
+                {"id": 4, "title": "80s Rock", "user": {"name": "Rod - Deezer Rock Editor"}},
+                {"id": 5, "title": "Rock of the Eighties", "user": {"name": "Deezer Best Of"}},
+            ]},
+            "/playlist/4/tracks?limit=100": {"data": [
+                song(41, "Quiet One", "Band A", 100), song(42, "Big Hit", "Band B", 900),
+                song(43, "Second Song", "Artist 2", 500, isrc="USX000000002"), song(44, "Gone", "Band C", 999, readable=False),
+            ]},
+            "/playlist/5/tracks?limit=100": {"data": [song(51, "Big Hit", "Band B", 300), song(52, "Middle", "Band D", 400)]},
+            "/search/playlist?q=60s%20rock&limit=25": {"data": []},
+        }
+        orig = discover._get
+        discover._get = lambda path, ttl: fake[path]
+        try:
+            got = self.get("/api/v1/discover/genres/152?era=80s")[1]
+            self.assertEqual([t["title"] for t in got["tracks"]], ["Big Hit", "Second Song", "Middle", "Quiet One"])  # most popular first, once each
+            self.assertEqual(got["tracks"][1]["in_library"], f"{2:022d}")  # (on the server already: by its recording code)
+            self.assertEqual((got["era"], got["eras"]), ("80s", ["60s", "70s", "80s", "90s", "00s", "10s", "20s"]))
+            self.assertEqual(self.get("/api/v1/discover/genres/152?era=60s")[1]["tracks"], [])
+            self.assertEqual(self.get("/api/v1/discover/genres/152?era=1980s")[0], 400)
+        finally:
+            discover._get = orig
+
+    def test_copying_playlists(self):
+        """Someone else's playlist (or Liked Songs) copied as a playlist of your own, to change."""
+        st, copy, _ = self.call(self.kid_token, "POST", "/api/v1/playlists/uproad/copy")
+        try:
+            self.assertEqual((st, copy["name"], copy["editable"], copy["owner_id"]), (200, "Road Trip", True, self.kid))
+            tracks = lambda pid, tok=self.kid_token: [t["id"] for t in self.get(f"/api/v1/playlists/{pid}", tok)[1]["tracks"]]  # noqa: E731
+            self.assertEqual(tracks(copy["id"]), tracks("uproad", self.token))
+            self.assertEqual(self.call(self.kid_token, "PATCH", f"/api/v1/playlists/{copy['id']}", {"name": "Kid's Trip"})[0], 200)
+            self.assertEqual(self.get("/api/v1/playlists/uproad")[1]["name"], "Road Trip")  # (the original as it was)
+            st, liked, _ = self.call(self.kid_token, "POST", "/api/v1/people/1/liked/copy")
+            self.assertTrue(liked["name"].endswith("'s Liked Songs"))
+            self.assertEqual(tracks(liked["id"]), [t["id"] for t in self.get("/api/v1/library/liked")[1]["tracks"]])
+            self.call(self.kid_token, "DELETE", f"/api/v1/playlists/{liked['id']}")
+            self.svc.db.run("UPDATE users SET share_music = 0 WHERE id = 1")
+            try:
+                self.assertEqual(self.call(self.kid_token, "POST", "/api/v1/playlists/uproad/copy")[0], 404)
+                self.assertEqual(self.call(self.kid_token, "POST", "/api/v1/people/1/liked/copy")[0], 403)
+            finally:
+                self.svc.db.run("UPDATE users SET share_music = 1 WHERE id = 1")
+        finally:
+            self.call(self.kid_token, "DELETE", f"/api/v1/playlists/{copy['id']}")
 
     def test_app_updates(self):
         from songarr import app_updates

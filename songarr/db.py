@@ -369,7 +369,8 @@ MIGRATIONS = {
     "user_playlists": {"source_id": "TEXT",  # the Spotify playlist it was brought over from (before Exportify)
                        "source_name": "TEXT", "source_snapshot": "TEXT", "source_seen": "TEXT", "image_url": "TEXT"},
     "users": {"login": "TEXT",  # optional: sign in by name and password instead of a QR code
-              "password_hash": "TEXT"},  # scrypt, see users.hash_password
+              "password_hash": "TEXT",  # scrypt, see users.hash_password
+              "share_music": "INTEGER NOT NULL DEFAULT 1"},  # others on the server can see their Liked Songs and playlists
 }
 
 # Settings that held the single Spotify connection before family profiles existed (Songarr no longer

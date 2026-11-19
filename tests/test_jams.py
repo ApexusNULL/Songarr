@@ -165,7 +165,7 @@ class JamApiTests(unittest.TestCase):
 
     def test_jam_with_sam(self):
         me, sam = self.tok[1], self.tok[self.sam]
-        self.assertEqual(self.call(me, "GET", "/api/v1/people")[1], {"people": [{"id": self.sam, "name": "Sam"}]})
+        self.assertEqual(self.call(me, "GET", "/api/v1/people")[1], {"people": [{"id": self.sam, "name": "Sam", "shares": True, "liked": 0, "playlists": 0}]})
         st, jam = self.call(me, "POST", "/api/v1/jams", {
             "items": [{"track_id": f"{1:022d}"}, {"track_id": f"{2:022d}"}, {"episode_id": "ep0123456789abcdef"}],
             "index": 0, "position_ms": 0, "playing": True, "invite": [self.sam]})

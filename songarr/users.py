@@ -149,8 +149,9 @@ class Users:
         self.db.run("UPDATE users SET login = NULL, password_hash = NULL WHERE id = ?", (user_id,))
 
     def account(self, user_id: int) -> dict:
-        row = self.db.one("SELECT name, login, password_hash FROM users WHERE id = ?", (user_id,))
-        return {"name": row["name"], "login": row["login"], "has_password": bool(row["password_hash"])}
+        row = self.db.one("SELECT name, login, password_hash, share_music FROM users WHERE id = ?", (user_id,))
+        return {"name": row["name"], "login": row["login"], "has_password": bool(row["password_hash"]),
+                "share_music": bool(row["share_music"])}
 
     def _name_tries(self, key: str) -> int:
         with self._lock:
