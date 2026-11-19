@@ -19,6 +19,34 @@ const auroraSoft = LinearGradient(colors: [accent, accent2]);
 
 const sparkleColors = [Colors.white, glowColor, Color(0xFFF9A8D4), Color(0xFFFCD34D)];
 
+// Each genre gets its own two-colour glow.
+const genreGradients = [
+  [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+  [Color(0xFFF97316), Color(0xFFDB2777)],
+  [Color(0xFF2563EB), Color(0xFF7C3AED)],
+  [Color(0xFF059669), Color(0xFF0EA5E9)],
+  [Color(0xFFE11D48), Color(0xFFF59E0B)],
+  [Color(0xFF16A34A), Color(0xFF84CC16)],
+  [Color(0xFFB45309), Color(0xFFEAB308)],
+  [Color(0xFF6D28D9), Color(0xFF312E81)],
+  [Color(0xFF0284C7), Color(0xFF22D3EE)],
+  [Color(0xFFA21CAF), Color(0xFF6366F1)],
+  [Color(0xFFDC2626), Color(0xFF7F1D1D)],
+  [Color(0xFF0F766E), Color(0xFF4F46E5)],
+];
+
+/// A genre's colours by its name, the same in every list: the usual ones picked to suit them, any
+/// other by its letters.
+List<Color> genreColors(String name) {
+  const picked = {
+    'Pop': 0, 'Rap': 1, 'Dance': 8, 'Electronic': 3, 'Rock': 10, 'Alternative': 5, 'R&B': 9,
+    'Soul & Funk': 6, 'Jazz': 6, 'Classical': 7, 'Country': 6, 'Metal': 10, 'Reggae': 5,
+    'Latin': 4, 'Soundtracks': 2, 'Blues': 2, 'Folk': 11, 'Kids': 4,
+  };
+  final i = picked[name] ?? name.codeUnits.fold<int>(7, (h, c) => (h * 31 + c) & 0x7fffffff);
+  return genreGradients[i % genreGradients.length];
+}
+
 const radiusL = 24.0;
 const radiusM = 16.0;
 const radiusS = 12.0;

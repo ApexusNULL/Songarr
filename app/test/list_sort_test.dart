@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:songarr_app/api/models.dart';
 import 'package:songarr_app/state/list_sort.dart';
@@ -58,32 +59,50 @@ void main() {
     expect(ListSort.fromJson({'by': 'something new'}).by, SortBy.custom);
   });
 
-  group('by genre and era', () {
+  group('genre cards, then eras', () {
     Track tagged(String id, String? genre, int? year) =>
         Track({'id': id, 'title': id, 'artists': ['X'], 'genre': genre, 'year': year, 'release_date': '2011'});
     final mix = [
-      tagged('rap88', 'Rap', 1988), tagged('pop03', 'Pop', 2003), tagged('rap85', 'Rap', 1985),
-      tagged('rock75', 'Rock', 1975), tagged('pop81', 'Pop', 1981), tagged('none', null, null), tagged('pop?', 'Pop', null),
+      tagged('rap88', 'Rap', 1988), tagged('pop03', 'Pop', 2003), tagged('rap85', 'Rap', 1985), tagged('rock75', 'Rock', 1975),
+      tagged('pop81', 'Pop', 1981), tagged('none', null, null), tagged('pop?', 'Pop', null), tagged('rap92', 'Rap', 1992),
+      tagged('blues', 'Blues', 1999),
     ];
-    List<String> sorted(ListSort s) => [for (final i in sortedOrder(mix, s)) mix[i].id];
-    List<String> groups(ListSort s) => [for (final g in groupsIn([for (final i in sortedOrder(mix, s)) mix[i]], s.by)) '${g.label} ${g.count}'];
+    String counted(List<({String label, int count})> l) => [for (final g in l) '${g.label} ${g.count}'].join(', ');
+    List<String> shown(ListFilter? f) => [for (final i in filtered(mix, [for (var i = 0; i < mix.length; i++) i], f)) mix[i].id];
 
     test('decades as people say them', () {
       expect([for (final y in [1975, 1988, 2003, 2015, 2024, 1949]) tagged('x', null, y).era], ['70s', '80s', '00s', '10s', '20s', 'Older']);
     });
 
-    test('era and genre together: "80s Rap", newest decade first, genres A to Z', () {
-      const s = ListSort(SortBy.eraGenre);
-      expect(sorted(s), ['pop03', 'pop81', 'rap88', 'rap85', 'rock75', 'pop?', 'none']);
-      expect(groups(s), ['00s Pop 1', '80s Pop 1', '80s Rap 2', '70s Rock 1', 'Pop 1', 'Not known yet 1']);
-      expect(sorted(const ListSort(SortBy.eraGenre, reversed: true)).take(4), ['pop?', 'rock75', 'pop81', 'rap88']);
+    test('a card for each genre, most songs first (then A to Z); songs not looked up yet in none', () {
+      expect(counted(genresIn(mix)), 'Pop 3, Rap 3, Blues 1, Rock 1');
     });
 
-    test('by genre A to Z, newest first in each; by era', () {
-      expect(groups(const ListSort(SortBy.genre)), ['Pop 3', 'Rap 2', 'Rock 1', 'Genre not known yet 1']);
-      expect(sorted(const ListSort(SortBy.genre)).take(3), ['pop03', 'pop81', 'pop?']);
-      expect(groups(const ListSort(SortBy.era)), ['00s 1', '80s 3', '70s 1', 'Year not known yet 2']);
-      expect(groups(const ListSort(SortBy.era, reversed: true)), ['70s 1', '80s 3', '00s 1', 'Year not known yet 2']);
+    test("a genre's eras, oldest first", () {
+      expect(counted(erasIn([for (final t in mix) if (t.genre == 'Rap') t])), '80s 2, 90s 1');
+      expect(counted(erasIn([for (final t in mix) if (t.genre == 'Pop') t])), '80s 1, 00s 1'); // (one without a year: in neither)
+    });
+
+    test('a genre shows just its songs, an era just those of it, in the order shown', () {
+      expect(shown(null).length, mix.length);
+      expect(shown((genre: 'Rap', era: null)), ['rap88', 'rap85', 'rap92']);
+      expect(shown((genre: 'Rap', era: '80s')), ['rap88', 'rap85']);
+      expect(filtered(mix, [7, 2, 0], (genre: 'Rap', era: null)), [7, 2, 0]);
+    });
+
+    test('tap a genre, an era, then the genre again: the whole list', () {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      final f = c.read(listFiltersProvider.notifier);
+      f.genre('liked', 'Rap');
+      f.era('liked', '80s');
+      expect(c.read(listFiltersProvider)['liked'], (genre: 'Rap', era: '80s'));
+      f.genre('liked', 'Pop'); // another genre: all its eras
+      expect(c.read(listFiltersProvider)['liked'], (genre: 'Pop', era: null));
+      f.genre('liked', 'Pop');
+      expect(c.read(listFiltersProvider)['liked'], isNull);
+      f.era('liked', '80s'); // (no genre: nothing to narrow)
+      expect(c.read(listFiltersProvider)['liked'], isNull);
     });
   });
 }

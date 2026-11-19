@@ -13,13 +13,7 @@ enum SortBy {
   artist('Artist'),
   album('Album'),
   released('Release date'),
-  length('Length'),
-  genre('Genre'),
-  era('Era'),
-  eraGenre('Era and genre'); // "80s Rap", "00s Pop"
-
-  /// Sorts that put the list in groups (each with a heading, and a chip to show just that one).
-  bool get groups => this == genre || this == era || this == eraGenre;
+  length('Length');
 
   const SortBy(this.label);
   final String label;
@@ -36,7 +30,7 @@ class ListSort {
 
   String get direction => switch (by) {
         SortBy.custom => '',
-        SortBy.added || SortBy.released || SortBy.era || SortBy.eraGenre => reversed ? 'oldest first' : 'newest first',
+        SortBy.added || SortBy.released => reversed ? 'oldest first' : 'newest first',
         SortBy.length => reversed ? 'longest first' : 'shortest first',
         _ => reversed ? 'Z to A' : 'A to Z',
       };
@@ -45,7 +39,7 @@ class ListSort {
 
   static ListSort fromJson(Object? j) {
     if (j is! Map) return none;
-    final by = SortBy.values.where((b) => b.name == j['by']).firstOrNull;
+    final by = SortBy.values.where((b) => b.name == j['by']).firstOrNull; // (one that's gone: the list's own order)
     return by == null ? none : ListSort(by, reversed: j['reversed'] == true);
   }
 }
@@ -57,46 +51,52 @@ List<int> sortedOrder(List<Track> tracks, ListSort sort) {
   final order = [for (var i = 0; i < tracks.length; i++) i];
   if (sort.by == SortBy.custom) return order;
   final keys = [for (final t in tracks) _key(t, sort.by)];
-  final newestFirst = const {SortBy.added, SortBy.released, SortBy.era, SortBy.eraGenre}.contains(sort.by);
+  final newestFirst = sort.by == SortBy.added || sort.by == SortBy.released;
   final descending = newestFirst != sort.reversed;
   order.sort((a, b) {
     final ka = keys[a], kb = keys[b];
     if (ka == null || kb == null) return ka == null && kb == null ? a - b : (ka == null ? 1 : -1);
     var c = ka.compareTo(kb);
     if (descending) c = -c;
-    final ta = tracks[a], tb = tracks[b];
-    if (c == 0 && sort.by == SortBy.eraGenre) c = _byGenre(ta, tb); // in each decade, genres A to Z
-    if (c == 0 && (sort.by == SortBy.genre || sort.by == SortBy.eraGenre)) c = (tb.year ?? 0).compareTo(ta.year ?? 0); // then newest first
-    if (c == 0 && sort.by != SortBy.added && sort.by != SortBy.title) c = _withinAlbum(ta, tb);
+    if (c == 0 && sort.by != SortBy.added && sort.by != SortBy.title) c = _withinAlbum(tracks[a], tracks[b]);
     return c != 0 ? c : a - b;
   });
   return order;
 }
 
-/// The heading of [t]'s group under a grouping sort ("80s Rap", "Pop", "90s"); null for other sorts.
-String? groupOf(Track t, SortBy by) => switch (by) {
-      SortBy.genre => t.genre ?? 'Genre not known yet',
-      SortBy.era => t.era ?? 'Year not known yet',
-      SortBy.eraGenre => t.era == null && t.genre == null ? 'Not known yet' : [?t.era, ?t.genre].join(' '),
-      _ => null,
-    };
-
-/// The groups in [tracks] (already sorted), in the order they come, with how many songs each.
-List<({String label, int count})> groupsIn(List<Track> tracks, SortBy by) {
+/// The genres of [tracks], most songs first (then A to Z), with how many songs each; songs not looked
+/// up yet aren't in any.
+List<({String label, int count})> genresIn(List<Track> tracks) {
   final counts = <String, int>{};
   for (final t in tracks) {
-    final g = groupOf(t, by);
-    if (g != null) counts[g] = (counts[g] ?? 0) + 1;
+    if (t.genre != null) counts[t.genre!] = (counts[t.genre!] ?? 0) + 1;
   }
-  return [for (final e in counts.entries) (label: e.key, count: e.value)];
+  final out = [for (final e in counts.entries) (label: e.key, count: e.value)];
+  out.sort((a, b) => a.count != b.count ? b.count - a.count : _words(a.label).compareTo(_words(b.label)));
+  return out;
 }
 
-/// Genres A to Z, songs without one last.
-int _byGenre(Track a, Track b) {
-  final ga = a.genre, gb = b.genre;
-  if (ga == null || gb == null) return ga == null ? (gb == null ? 0 : 1) : -1;
-  return _words(ga).compareTo(_words(gb));
+/// The eras of [tracks] ("80s", "90s"), oldest first, with how many songs each.
+List<({String label, int count})> erasIn(List<Track> tracks) {
+  final counts = <String, int>{}, first = <String, int>{};
+  for (final t in tracks) {
+    final e = t.era;
+    if (e == null) continue;
+    counts[e] = (counts[e] ?? 0) + 1;
+    first[e] = first[e] == null || t.year! < first[e]! ? t.year! : first[e]!;
+  }
+  final out = [for (final e in counts.entries) (label: e.key, count: e.value)];
+  out.sort((a, b) => first[a.label]!.compareTo(first[b.label]!));
+  return out;
 }
+
+/// What a list is narrowed to: one genre ("Rap"), and in it perhaps one era ("80s").
+typedef ListFilter = ({String genre, String? era});
+
+/// [tracks] (positions in the list, in the order shown) that are in [filter].
+List<int> filtered(List<Track> tracks, List<int> order, ListFilter? filter) => filter == null
+    ? order
+    : [for (final i in order) if (tracks[i].genre == filter.genre && (filter.era == null || tracks[i].era == filter.era)) i];
 
 Comparable<Object>? _key(Track t, SortBy by) => switch (by) {
       SortBy.custom => null,
@@ -106,9 +106,6 @@ Comparable<Object>? _key(Track t, SortBy by) => switch (by) {
       SortBy.album => t.album == null || t.album!.isEmpty ? null : _words(t.album!),
       SortBy.released => t.releaseDate == null || t.releaseDate!.isEmpty ? null : t.releaseDate, // "1984-02-27" or "1984"
       SortBy.length => t.duration == Duration.zero ? null : t.duration.inMilliseconds,
-      SortBy.genre => t.genre == null ? null : _words(t.genre!),
-      SortBy.era => t.year,
-      SortBy.eraGenre => t.year == null ? (t.genre == null ? null : -1) : t.year! ~/ 10, // (a genre without a year: after the decades)
     };
 
 String _words(String s) => s.trim().toLowerCase();
@@ -155,12 +152,21 @@ class ListSorts extends Notifier<Map<String, ListSort>> {
 
 final listSortsProvider = NotifierProvider<ListSorts, Map<String, ListSort>>(ListSorts.new);
 
-/// Under a grouping sort, the one group of each list being shown ("80s Rap"), while the app runs.
-class ListGroups extends Notifier<Map<String, String>> {
+/// The genre (and era) each list is narrowed to, while the app runs: tap a genre's card to show just
+/// its songs, then an era to narrow it again; tap the genre again to see the whole list.
+class ListFilters extends Notifier<Map<String, ListFilter>> {
   @override
-  Map<String, String> build() => const {};
+  Map<String, ListFilter> build() => const {};
 
-  void show(String key, String? group) => state = group == null ? ({...state}..remove(key)) : {...state, key: group};
+  /// Show [genre]'s songs; the genre already shown: the whole list again.
+  void genre(String key, String genre) =>
+      state = state[key]?.genre == genre ? ({...state}..remove(key)) : {...state, key: (genre: genre, era: null)};
+
+  /// In the genre shown, just [era]'s songs (null: all of them).
+  void era(String key, String? era) {
+    final f = state[key];
+    if (f != null) state = {...state, key: (genre: f.genre, era: era)};
+  }
 }
 
-final listGroupsProvider = NotifierProvider<ListGroups, Map<String, String>>(ListGroups.new);
+final listFiltersProvider = NotifierProvider<ListFilters, Map<String, ListFilter>>(ListFilters.new);

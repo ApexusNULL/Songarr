@@ -234,25 +234,54 @@ class TrackListScreen extends ConsumerWidget {
 
   Widget _body(BuildContext context, WidgetRef ref, TrackPage page, OfflineState offline, String? sortKey, ListSort sort) {
     // Shown (and played) in the order chosen; moving a song, or taking it out, goes by its place in the list itself.
-    var order = sortedOrder(page.tracks, sort);
-    // Sorted by genre or era: the list in groups ("80s Rap", "00s Pop"), and a chip to show (and play) just one.
-    final groups = sortKey != null && sort.by.groups ? groupsIn([for (final i in order) page.tracks[i]], sort.by) : const <({String label, int count})>[];
-    final chosen = sortKey == null ? null : ref.watch(listGroupsProvider)[sortKey];
-    final group = groups.any((g) => g.label == chosen) ? chosen : null;
-    if (group != null) order = [for (final i in order) if (groupOf(page.tracks[i], sort.by) == group) i];
+    final sorted = sortedOrder(page.tracks, sort);
+    // The list's genres as cards: tap one to show (and play) just its songs, then an era to narrow it again.
+    final genres = sortKey != null && page.tracks.length > 1 ? genresIn(page.tracks) : const <({String label, int count})>[];
+    final kept = sortKey == null ? null : ref.watch(listFiltersProvider)[sortKey];
+    final genre = genres.any((g) => g.label == kept?.genre) ? kept!.genre : null;
+    final inGenre = genre == null ? const <Track>[] : [for (final t in page.tracks) if (t.genre == genre) t];
+    final eras = erasIn(inGenre);
+    final showEras = eras.length > 1 || (eras.length == 1 && eras.first.count < inGenre.length);
+    final era = showEras && eras.any((e) => e.label == kept?.era) ? kept!.era : null;
+    final order = filtered(page.tracks, sorted, genre == null ? null : (genre: genre, era: era));
     final tracks = [for (final i in order) page.tracks[i]];
-    // the rows: each song, with its group's heading before the first of them
-    final rows = <Object>[];
-    for (var i = 0; i < tracks.length; i++) {
-      final g = groups.length > 1 && group == null ? groupOf(tracks[i], sort.by) : null;
-      if (g != null && (i == 0 || groupOf(tracks[i - 1], sort.by) != g)) rows.add(g);
-      rows.add(i);
+    final covers = <String, String>{}; // each genre's card: the cover of its first song
+    for (final i in sorted) {
+      final t = page.tracks[i];
+      if (t.genre != null && t.thumbUrl != null) covers.putIfAbsent(t.genre!, () => t.thumbUrl!);
     }
     final player = ref.read(playerProvider);
     final editable = _kind == _Kind.playlist && page.editable;
+    final filters = ref.read(listFiltersProvider.notifier);
     return CustomScrollView(slivers: [
       SliverToBoxAdapter(
-          child: _header(context, ref, TrackPage(total: group == null ? page.total : tracks.length, tracks: tracks, info: page.info), offline)),
+          child: _header(context, ref, TrackPage(total: genre == null ? page.total : tracks.length, tracks: tracks, info: page.info), offline)),
+      if (genres.isNotEmpty)
+        SliverToBoxAdapter(child: _GenreCards(genres: genres, covers: covers, chosen: genre, onTap: (g) => filters.genre(sortKey!, g))),
+      SliverToBoxAdapter(
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: !showEras
+              ? const SizedBox(width: double.infinity)
+              : SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                  child: Row(children: [
+                    for (final e in [(label: null, count: inGenre.length), ...eras])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterPill(
+                          label: '${e.label ?? 'All $genre'} · ${e.count}',
+                          selected: era == e.label,
+                          onTap: () => filters.era(sortKey!, era == e.label ? null : e.label),
+                        ),
+                      ),
+                  ]),
+                ),
+        ),
+      ),
       if (sortKey != null && page.tracks.length > 1)
         SliverToBoxAdapter(
           child: Padding(
@@ -267,24 +296,6 @@ class TrackListScreen extends ConsumerWidget {
             ),
           ),
         ),
-      if (groups.length > 1)
-        SliverToBoxAdapter(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Row(children: [
-              for (final g in [(label: null, count: page.tracks.length), ...groups])
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterPill(
-                    label: '${g.label ?? 'All'} · ${g.count}',
-                    selected: group == g.label,
-                    onTap: () => ref.read(listGroupsProvider.notifier).show(sortKey!, group == g.label ? null : g.label),
-                  ),
-                ),
-            ]),
-          ),
-        ),
       if (tracks.isEmpty)
         SliverToBoxAdapter(
           child: Padding(
@@ -297,20 +308,8 @@ class TrackListScreen extends ConsumerWidget {
           ),
         ),
       SliverList.builder(
-        itemCount: rows.length,
-        itemBuilder: (context, r) {
-          final row = rows[r];
-          if (row is String) {
-            final n = groups.firstWhere((g) => g.label == row).count;
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
-              child: Row(children: [
-                Expanded(child: GradientMask(child: Text(row, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)))),
-                Text('$n song${n == 1 ? '' : 's'}', style: const TextStyle(color: muted, fontSize: 13)),
-              ]),
-            );
-          }
-          final i = row as int;
+        itemCount: tracks.length,
+        itemBuilder: (context, i) {
           final tile = TrackTile(
             track: tracks[i],
             number: tracks[i].trackNumber ?? i + 1,
@@ -321,7 +320,7 @@ class TrackListScreen extends ConsumerWidget {
             list: page.tracks,
             onTap: () => player.play(tracks, index: i, listKey: _listKey),
           );
-          return r < 14 ? FadeSlideIn(index: r, child: tile) : tile;
+          return i < 14 ? FadeSlideIn(index: i, child: tile) : tile;
         },
       ),
       const SliverToBoxAdapter(child: SizedBox(height: 190)),
@@ -335,9 +334,7 @@ class TrackListScreen extends ConsumerWidget {
   Future<void> _chooseSort(BuildContext context, WidgetRef ref, String key, ListSort current, List<Track> tracks) {
     final options = [
       for (final by in SortBy.values)
-        if ((by != SortBy.added || tracks.any((t) => t.addedAt != null)) && // (a server from before it said when)
-            (!by.groups || tracks.any((t) => t.genre != null || t.year != null))) // (or before it looked up genres and years)
-          by,
+        if (by != SortBy.added || tracks.any((t) => t.addedAt != null)) by, // (a server from before it said when)
     ];
     return showModalBottomSheet<void>(
       context: context,
@@ -676,4 +673,82 @@ class ArtistScreen extends ConsumerWidget {
       ],
     ];
   }
+}
+
+/// A list's genres as cards across its top, most songs first: tap one to show just its songs (it lights
+/// up and the rest dim), the same one again for the whole list.
+class _GenreCards extends StatelessWidget {
+  const _GenreCards({required this.genres, required this.covers, required this.chosen, required this.onTap});
+  final List<({String label, int count})> genres;
+  final Map<String, String> covers;
+  final String? chosen;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 104,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none, // (the chosen card's glow spills over)
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          itemCount: genres.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 10),
+          itemBuilder: (context, i) {
+            final g = genres[i];
+            final colors = genreColors(g.label);
+            final on = chosen == g.label;
+            final cover = covers[g.label];
+            final card = Pressable(
+              onTap: () => onTap(g.label),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 280),
+                opacity: chosen == null || on ? 1 : 0.4,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  width: 148,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(radiusM),
+                    gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    border: Border.all(color: on ? Colors.white : Colors.transparent, width: 2),
+                    boxShadow: [
+                      BoxShadow(color: colors.first.withValues(alpha: on ? 0.6 : 0.25), blurRadius: on ? 22 : 12, offset: const Offset(0, 5)),
+                    ],
+                  ),
+                  child: Stack(children: [
+                    if (cover != null)
+                      Positioned(
+                        right: -12,
+                        bottom: -10,
+                        child: Transform.rotate(
+                          angle: 0.4,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: CachedNetworkImage(
+                                imageUrl: cover, width: 58, height: 58, fit: BoxFit.cover, memCacheWidth: 160, errorWidget: (_, _, _) => const SizedBox()),
+                          ),
+                        ),
+                      ),
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(12, 10, on ? 24 : 10, 10), // (room for the ×)
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(g.label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.3, height: 1.1)),
+                        const Spacer(),
+                        Text('${g.count} song${g.count == 1 ? '' : 's'}',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70)),
+                      ]),
+                    ),
+                    if (on) const Positioned(top: 6, right: 6, child: Icon(Icons.close_rounded, size: 16)),
+                  ]),
+                ),
+              ),
+            );
+            return i < 8 ? FadeSlideIn(index: i, child: card) : card;
+          },
+        ),
+      );
 }
