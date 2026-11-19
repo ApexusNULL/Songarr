@@ -1308,11 +1308,14 @@ class AppAPI:
 
     def genre(self, user: dict, q: dict, body: dict, gid: str) -> dict:
         """A genre's popular songs: right now (its Deezer chart), or with `era` ("80s", "00s"...) the
-        most popular of that decade."""
-        era, limit = q.get("era") or None, _int(q.get("limit"), 50, 1, 100)
-        if era is not None and era not in discover.ERAS:
-            raise ApiError(400, f"era must be one of {', '.join(discover.ERAS)}.")
-        found = discover.genre_era(_int(gid, 0, 0, 10**9), era, limit) if era else discover.genre_chart(_int(gid, 0, 0, 10**9), limit)
+        most popular of that decade; several decades at once as "80s,90s"."""
+        eras = list(dict.fromkeys(e for e in (q.get("era") or "").split(",") if e))
+        era, limit = ",".join(eras) or None, _int(q.get("limit"), 50, 1, 100)
+        if any(e not in discover.ERAS for e in eras):
+            raise ApiError(400, f"era must be one or more of {', '.join(discover.ERAS)}.")
+        gid_n = _int(gid, 0, 0, 10**9)
+        found = (discover.genre_eras(gid_n, eras, limit) if len(eras) > 1 else discover.genre_era(gid_n, eras[0], limit)) if eras \
+            else discover.genre_chart(gid_n, limit)
         items = [{"source": "deezer", "id": t["deezer_id"], "isrc": None} | t for t in found]
         return {"genre_id": int(gid), "era": era, "eras": list(discover.ERAS), "tracks": self.annotate(items)}
 

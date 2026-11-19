@@ -263,8 +263,8 @@ class TrackListScreen extends ConsumerWidget {
     final inGenre = genre == null ? const <Track>[] : [for (final t in page.tracks) if (t.genre == genre) t];
     final eras = erasIn(inGenre);
     final showEras = eras.length > 1 || (eras.length == 1 && eras.first.count < inGenre.length);
-    final era = showEras && eras.any((e) => e.label == kept?.era) ? kept!.era : null;
-    final order = filtered(page.tracks, sorted, genre == null ? null : (genre: genre, era: era));
+    final chosen = showEras ? {for (final e in eras) if (kept!.eras.contains(e.label)) e.label} : const <String>{};
+    final order = filtered(page.tracks, sorted, genre == null ? null : (genre: genre, eras: chosen));
     final tracks = [for (final i in order) page.tracks[i]];
     final covers = <String, String>{}; // each genre's card: the cover of its first song
     for (final i in sorted) {
@@ -295,8 +295,8 @@ class TrackListScreen extends ConsumerWidget {
                         padding: const EdgeInsets.only(right: 8),
                         child: FilterPill(
                           label: '${e.label ?? 'All $genre'} · ${e.count}',
-                          selected: era == e.label,
-                          onTap: () => filters.era(sortKey!, era == e.label ? null : e.label),
+                          selected: e.label == null ? chosen.isEmpty : chosen.contains(e.label),
+                          onTap: () => e.label == null ? filters.allEras(sortKey!) : filters.era(sortKey!, e.label!),
                         ),
                       ),
                   ]),

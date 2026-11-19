@@ -71,9 +71,9 @@ final discographyProvider = FutureProvider.autoDispose.family<Discography, Strin
   return _api(ref).discography(int.parse(key.substring(0, i)), key.substring(i + 1));
 });
 final genresProvider = FutureProvider<List<Genre>>((ref) => _api(ref).genres());
-/// A genre's popular songs: right now (era null), or the most popular of a decade ("80s").
+/// A genre's popular songs: right now (eras null), or the most popular of some decades ("80s,90s").
 final genreChartProvider = FutureProvider.autoDispose.family<List<CatalogItem>, (int, String?)>(
-    (ref, key) => _api(ref).genreChart(key.$1, era: key.$2));
+    (ref, key) => _api(ref).genreChart(key.$1, eras: key.$2));
 final requestsProvider = FutureProvider.autoDispose<List<Track>>((ref) => _api(ref).requests());
 final requestProgressProvider = FutureProvider.autoDispose<DownloadProgress?>((ref) => _api(ref).requestProgress());
 final meProvider = FutureProvider.autoDispose<Me>((ref) => _api(ref).me());

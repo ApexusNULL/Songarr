@@ -521,8 +521,8 @@ class _CatalogTileState extends ConsumerState<CatalogTile> {
   }
 }
 
-/// A genre's popular songs, right now or the most popular of a decade: pick one of the pills
-/// (Now, 60s ... 20s). Songs not on the server yet can be previewed and added.
+/// A genre's popular songs, right now or the most popular of some decades: pick pills (Now, or as
+/// many of 60s ... 20s as you like). Songs not on the server yet can be previewed and added.
 class GenreScreen extends ConsumerStatefulWidget {
   const GenreScreen(this.genre, {super.key});
   final Genre genre;
@@ -534,10 +534,15 @@ class GenreScreen extends ConsumerStatefulWidget {
 const _eras = ['60s', '70s', '80s', '90s', '00s', '10s', '20s'];
 
 class _GenreScreenState extends ConsumerState<GenreScreen> {
-  String? _era; // null: popular right now
+  final _chosen = <String>{}; // none: popular right now
 
   Genre get genre => widget.genre;
-  (int, String?) get _key => (genre.id, _era);
+  List<String> get _picked => [for (final e in _eras) if (_chosen.contains(e)) e]; // (oldest first)
+  (int, String?) get _key => (genre.id, _chosen.isEmpty ? null : _picked.join(','));
+  /// "80s", "80s & 90s", "70s, 80s & 90s".
+  String get _era => _picked.length == 1
+      ? _picked.first
+      : '${_picked.sublist(0, _picked.length - 1).join(', ')} & ${_picked.last}';
   String get _name => genre.id == 0 ? 'songs' : genre.name;
 
   @override
@@ -563,7 +568,12 @@ class _GenreScreenState extends ConsumerState<GenreScreen> {
               for (final e in [null, ..._eras])
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
-                  child: FilterPill(label: e ?? 'Now', selected: _era == e, onTap: () => setState(() => _era = e)),
+                  child: FilterPill(
+                    label: e ?? 'Now',
+                    selected: e == null ? _chosen.isEmpty : _chosen.contains(e),
+                    // Now on its own; decades as many as you like (tap one again to drop it)
+                    onTap: () => setState(() => e == null ? _chosen.clear() : (_chosen.remove(e) || _chosen.add(e))),
+                  ),
                 ),
             ]),
           ),
@@ -583,7 +593,7 @@ class _GenreScreenState extends ConsumerState<GenreScreen> {
               padding: const EdgeInsets.fromLTRB(20, 4, 16, 8),
               child: Row(children: [
                 Expanded(
-                  child: Text('${_era == null ? 'Popular right now' : 'Most popular $_era $_name'} · ${items.length - missing.length} of ${items.length} in your library',
+                  child: Text('${_chosen.isEmpty ? 'Popular right now' : 'Most popular $_era $_name'} · ${items.length - missing.length} of ${items.length} in your library',
                       style: const TextStyle(color: muted)),
                 ),
                 if (missing.isNotEmpty)

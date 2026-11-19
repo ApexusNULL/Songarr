@@ -571,6 +571,8 @@ class AppAPITests(unittest.TestCase):
             ]},
             "/playlist/5/tracks?limit=100": {"data": [song(51, "Big Hit", "Band B", 300), song(52, "Middle", "Band D", 400)]},
             "/search/playlist?q=60s%20rock&limit=25": {"data": []},
+            "/search/playlist?q=90s%20rock&limit=25": {"data": [{"id": 9, "title": "'90s Rock", "user": {"name": "Rod - Deezer Rock Editor"}}]},
+            "/playlist/9/tracks?limit=100": {"data": [song(91, "Grunge", "Band E", 600), song(92, "Big Hit", "Band B", 950)]},
         }
         orig = discover._get
         discover._get = lambda path, ttl: fake[path]
@@ -581,6 +583,14 @@ class AppAPITests(unittest.TestCase):
             self.assertEqual((got["era"], got["eras"]), ("80s", ["60s", "70s", "80s", "90s", "00s", "10s", "20s"]))
             self.assertEqual(self.get("/api/v1/discover/genres/152?era=60s")[1]["tracks"], [])
             self.assertEqual(self.get("/api/v1/discover/genres/152?era=1980s")[0], 400)
+            # several decades at once: each one's most popular in turn, each song once
+            both = self.get("/api/v1/discover/genres/152?era=90s,80s")[1]
+            self.assertEqual([t["title"] for t in both["tracks"]], ["Big Hit", "Grunge", "Second Song", "Middle", "Quiet One"])
+            self.assertEqual(both["era"], "90s,80s")
+            both = self.get("/api/v1/discover/genres/152?era=80s,90s")[1]
+            self.assertEqual([t["title"] for t in both["tracks"]], ["Big Hit", "Second Song", "Grunge", "Middle", "Quiet One"])
+            self.assertEqual(both["era"], "80s,90s")
+            self.assertEqual(self.get("/api/v1/discover/genres/152?era=80s,1990s")[0], 400)
         finally:
             discover._get = orig
 

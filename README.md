@@ -554,8 +554,8 @@ deletes song files on its own: when someone unlikes a song, it only leaves *thei
   artist, album, release date or length. Tap the sort in use again to turn it round. The list plays in
   the order shown, and each list keeps its sort on that phone.
 - **Genres and eras:** a playlist or Liked Songs has a card for each of its genres across the top, most
-  songs first. Tap one to show (and play) just its songs, then pick an era under it (80s, 90s, 00s...)
-  to narrow it to, say, 80s Rap; tap the genre again to see the whole list. Genres come from
+  songs first. Tap one to show (and play) just its songs, then pick eras under it (80s, 90s, 00s...,
+  as many as you like) to narrow it to, say, 80s and 90s Rap; tap the genre again to see the whole list. Genres come from
   [Deezer](https://developers.deezer.com/api) and the year each recording first came out from
   [MusicBrainz](https://musicbrainz.org) (so a remaster counts as the original's era); the server looks
   them up in the background, about a song a second.
@@ -564,8 +564,8 @@ deletes song files on its own: when someone unlikes a song, it only leaves *thei
   them. **Make a copy you can edit** (the ⋯ on someone's playlist) makes it a playlist of your own;
   their Liked Songs can be copied as one too. Anyone who'd rather keep theirs private turns off
   **Settings → Share your music**.
-- **Popular by genre, by era** (Search → a genre): what's popular right now, or pick a decade (60s to
-  20s) for its most popular songs, such as 80s Rap, from the playlists Deezer's own editors make for
+- **Popular by genre, by era** (Search → a genre): what's popular right now, or pick decades (60s to
+  20s, as many as you like) for their most popular songs, such as 80s and 90s Rap (each decade's in turn), from the playlists Deezer's own editors make for
   each genre and decade, ranked by how popular each song is. Songs not on the server yet can be
   previewed and added, one by one or all at once.
 - **Smart Shuffle** (the ✦ button on a playlist or Liked Songs, or tap shuffle in Now Playing until it

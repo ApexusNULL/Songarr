@@ -133,6 +133,20 @@ def genre_era(genre_id: int, era: str, limit: int = 50) -> list[dict]:
     return [_track(t) for t in ranked[: min(100, int(limit))]]
 
 
+def genre_eras(genre_id: int, eras: list[str], limit: int = 50) -> list[dict]:
+    """The most popular songs of one genre across several decades (80s and 90s Rap): each decade's
+    in turn, most popular first (its #1, the next one's #1, then each's #2...), so newer decades' far
+    bigger play counts don't bury the older ones. Each song once."""
+    lists = [genre_era(genre_id, era, 100) for era in eras]
+    out, seen = [], set()
+    for i in range(max((len(x) for x in lists), default=0)):
+        for songs in lists:
+            if i < len(songs) and (key := song_key(songs[i]["artists"], songs[i]["title"])) not in seen:
+                seen.add(key)
+                out.append(songs[i])
+    return out[: min(100, int(limit))]
+
+
 def search(query: str, limit: int = 20) -> list[dict]:
     q = urllib.parse.quote(query)
     data = _get(f"/search/track?q={q}&limit={min(50, int(limit))}", 600)

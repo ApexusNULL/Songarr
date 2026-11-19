@@ -85,24 +85,34 @@ void main() {
 
     test('a genre shows just its songs, an era just those of it, in the order shown', () {
       expect(shown(null).length, mix.length);
-      expect(shown((genre: 'Rap', era: null)), ['rap88', 'rap85', 'rap92']);
-      expect(shown((genre: 'Rap', era: '80s')), ['rap88', 'rap85']);
-      expect(filtered(mix, [7, 2, 0], (genre: 'Rap', era: null)), [7, 2, 0]);
+      expect(shown((genre: 'Rap', eras: {})), ['rap88', 'rap85', 'rap92']);
+      expect(shown((genre: 'Rap', eras: {'80s'})), ['rap88', 'rap85']);
+      expect(shown((genre: 'Pop', eras: {'80s', '00s'})), ['pop03', 'pop81']); // (several at once)
+      expect(filtered(mix, [7, 2, 0], (genre: 'Rap', eras: {})), [7, 2, 0]);
     });
 
-    test('tap a genre, an era, then the genre again: the whole list', () {
+    test('tap a genre, some eras (again to drop one), then the genre again: the whole list', () {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       final f = c.read(listFiltersProvider.notifier);
+      String? now() => c.read(listFiltersProvider)['liked'] == null
+          ? null
+          : '${c.read(listFiltersProvider)['liked']!.genre} ${(c.read(listFiltersProvider)['liked']!.eras.toList()..sort()).join('+')}';
       f.genre('liked', 'Rap');
       f.era('liked', '80s');
-      expect(c.read(listFiltersProvider)['liked'], (genre: 'Rap', era: '80s'));
+      f.era('liked', '90s');
+      expect(now(), 'Rap 80s+90s');
+      f.era('liked', '80s');
+      expect(now(), 'Rap 90s');
+      f.allEras('liked');
+      expect(now(), 'Rap ');
+      f.era('liked', '00s');
       f.genre('liked', 'Pop'); // another genre: all its eras
-      expect(c.read(listFiltersProvider)['liked'], (genre: 'Pop', era: null));
+      expect(now(), 'Pop ');
       f.genre('liked', 'Pop');
-      expect(c.read(listFiltersProvider)['liked'], isNull);
+      expect(now(), isNull);
       f.era('liked', '80s'); // (no genre: nothing to narrow)
-      expect(c.read(listFiltersProvider)['liked'], isNull);
+      expect(now(), isNull);
     });
   });
 }

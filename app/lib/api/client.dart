@@ -405,9 +405,11 @@ class SongarrApi {
           Genre((g['id'] as num).toInt(), g['name'] as String, g['image'] as String?),
       ];
 
-  /// A genre's popular songs: right now, or the most popular of an [era] ("80s", "00s"...).
-  Future<List<CatalogItem>> genreChart(int id, {String? era}) async => [
-        for (final t in (await _get('/discover/genres/$id', {'limit': 50, 'era': ?era}))['tracks'] as List) CatalogItem(t as Map<String, dynamic>)
+  /// A genre's popular songs: right now, or the most popular of [eras] ("80s,90s": several decades
+  /// ranked together).
+  Future<List<CatalogItem>> genreChart(int id, {String? eras}) async => [
+        for (final t in (await _get('/discover/genres/$id', {'limit': eras != null && eras.contains(',') ? 100 : 50, 'era': ?eras}))['tracks'] as List)
+          CatalogItem(t as Map<String, dynamic>)
       ];
 
   // -- Jams --------------------------------------------------------------------------

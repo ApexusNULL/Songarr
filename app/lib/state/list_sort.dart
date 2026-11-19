@@ -90,13 +90,17 @@ List<({String label, int count})> erasIn(List<Track> tracks) {
   return out;
 }
 
-/// What a list is narrowed to: one genre ("Rap"), and in it perhaps one era ("80s").
-typedef ListFilter = ({String genre, String? era});
+/// What a list is narrowed to: one genre ("Rap"), and in it perhaps some eras ("80s", "90s"; none:
+/// all of them).
+typedef ListFilter = ({String genre, Set<String> eras});
 
 /// [tracks] (positions in the list, in the order shown) that are in [filter].
 List<int> filtered(List<Track> tracks, List<int> order, ListFilter? filter) => filter == null
     ? order
-    : [for (final i in order) if (tracks[i].genre == filter.genre && (filter.era == null || tracks[i].era == filter.era)) i];
+    : [
+        for (final i in order)
+          if (tracks[i].genre == filter.genre && (filter.eras.isEmpty || filter.eras.contains(tracks[i].era))) i
+      ];
 
 Comparable<Object>? _key(Track t, SortBy by) => switch (by) {
       SortBy.custom => null,
@@ -152,20 +156,29 @@ class ListSorts extends Notifier<Map<String, ListSort>> {
 
 final listSortsProvider = NotifierProvider<ListSorts, Map<String, ListSort>>(ListSorts.new);
 
-/// The genre (and era) each list is narrowed to, while the app runs: tap a genre's card to show just
-/// its songs, then an era to narrow it again; tap the genre again to see the whole list.
+/// The genre (and eras) each list is narrowed to, while the app runs: tap a genre's card to show just
+/// its songs, then eras to narrow it again (as many as you like); tap the genre again to see the whole
+/// list.
 class ListFilters extends Notifier<Map<String, ListFilter>> {
   @override
   Map<String, ListFilter> build() => const {};
 
   /// Show [genre]'s songs; the genre already shown: the whole list again.
   void genre(String key, String genre) =>
-      state = state[key]?.genre == genre ? ({...state}..remove(key)) : {...state, key: (genre: genre, era: null)};
+      state = state[key]?.genre == genre ? ({...state}..remove(key)) : {...state, key: (genre: genre, eras: const <String>{})};
 
-  /// In the genre shown, just [era]'s songs (null: all of them).
-  void era(String key, String? era) {
+  /// In the genre shown, [era]'s songs too (or no longer, if they were shown).
+  void era(String key, String era) {
     final f = state[key];
-    if (f != null) state = {...state, key: (genre: f.genre, era: era)};
+    if (f == null) return;
+    final eras = f.eras.contains(era) ? ({...f.eras}..remove(era)) : {...f.eras, era};
+    state = {...state, key: (genre: f.genre, eras: eras)};
+  }
+
+  /// In the genre shown, all its eras again.
+  void allEras(String key) {
+    final f = state[key];
+    if (f != null) state = {...state, key: (genre: f.genre, eras: const <String>{})};
   }
 }
 
